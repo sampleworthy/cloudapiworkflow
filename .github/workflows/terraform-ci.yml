@@ -41,7 +41,7 @@ jobs:
     name: plan dev
     needs: static
     uses: ./.github/workflows/_terraform.yml
-    permissions: { contents: read, id-token: write, pull-requests: write }
+    permissions: { contents: read, id-token: write, pull-requests: write, actions: write }
     with:
       working_directory: terraform/environments/dev
       environment: development
@@ -56,7 +56,7 @@ jobs:
     needs: static
     if: vars.PROD_ENABLED == 'true'
     uses: ./.github/workflows/_terraform.yml
-    permissions: { contents: read, id-token: write, pull-requests: write }
+    permissions: { contents: read, id-token: write, pull-requests: write, actions: write }
     with:
       working_directory: terraform/environments/prod
       environment: production
