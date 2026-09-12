@@ -286,3 +286,76 @@ resource "azurerm_role_assignment" "backend_key_vault_secrets_user" {
   role_definition_name = "Key Vault Secrets User"
   principal_id         = each.value.identity_principal_id
 }
+
+# ---------------------------------------------------------------------------
+# Microsoft Foundry: the agent runtime. Terraform provides the resource, the
+# project, one model deployment, tracing and RBAC. Agents are deployed by
+# agent-deploy (Foundry CI/CD), APIs by APIOps - three lifecycles, one gateway.
+# ---------------------------------------------------------------------------
+
+module "foundry" {
+  source = "../../modules/foundry"
+
+  name                 = "aif-${local.name_prefix}-${random_string.suffix.result}"
+  location             = azurerm_resource_group.main.location
+  resource_group_name  = azurerm_resource_group.main.name
+  project_name         = "proj-${local.name_prefix}-${var.environment}"
+  project_display_name = "Cloud API Workflow (${var.environment})"
+  model                = var.foundry_model
+
+  public_network_access_enabled = !var.enable_private_endpoints
+  private_endpoint_subnet_id    = var.enable_private_endpoints ? module.networking.private_endpoint_subnet_id : null
+  private_dns_zone_ids = var.enable_private_endpoints ? [
+    module.networking.private_dns_zone_ids["privatelink.cognitiveservices.azure.com"],
+    module.networking.private_dns_zone_ids["privatelink.openai.azure.com"],
+    module.networking.private_dns_zone_ids["privatelink.services.ai.azure.com"],
+  ] : []
+
+  app_insights_id                = module.monitoring.app_insights_id
+  app_insights_connection_string = module.monitoring.app_insights_connection_string
+  log_analytics_workspace_id     = module.monitoring.log_analytics_workspace_id
+  tags                           = local.tags
+}
+
+# Agent workload identity: the Foundry project's managed identity is granted
+# read roles on the API resource app, so its tool calls carry
+# roles=[Skills.Read, Orders.Read] and APIM authorises them like any client.
+resource "azuread_app_role_assignment" "agent_identity" {
+  for_each = toset(var.agent_app_roles)
+
+  app_role_id         = module.api_resource_app.app_role_ids[each.value]
+  principal_object_id = module.foundry.project_identity_principal_id
+  resource_object_id  = module.api_resource_app.service_principal_object_id
+}
+
+# The client id is what appears as the azp/appid claim in the agent's tokens;
+# the end-to-end test matches APIM telemetry on it.
+data "azuread_service_principal" "agent_identity" {
+  object_id = module.foundry.project_identity_principal_id
+}
+
+# APIM -> Foundry models with the gateway's managed identity (model API in
+# apim/artifacts/apis/foundry-models-v1).
+resource "azurerm_role_assignment" "apim_openai_user" {
+  scope                = module.foundry.account_id
+  role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = module.apim.identity_principal_id
+}
+
+# Agent deployer (GitHub OIDC): creates agent versions and runs the
+# end-to-end test; reads telemetry to prove the request crossed APIM.
+data "azuread_service_principal" "agent_deployer" {
+  display_name = var.agent_deployer_display_name
+}
+
+resource "azurerm_role_assignment" "agent_deployer_ai_developer" {
+  scope                = module.foundry.account_id
+  role_definition_name = "Azure AI Developer"
+  principal_id         = data.azuread_service_principal.agent_deployer.object_id
+}
+
+resource "azurerm_role_assignment" "agent_deployer_log_reader" {
+  scope                = module.monitoring.log_analytics_workspace_id
+  role_definition_name = "Log Analytics Reader"
+  principal_id         = data.azuread_service_principal.agent_deployer.object_id
+}

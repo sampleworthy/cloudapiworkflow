@@ -18,6 +18,20 @@ terraform/**  ─PR─▶ terraform-ci ─merge─▶            apim/artifacts/
     └── Entra resource app · demo clients          api-promote (sha) ──reviewers──▶ prod
 ```
 
+## What it governs
+
+| workload | lifecycle | how it reaches the gateway | governed by |
+|---|---|---|---|
+| traditional APIs (Skills, Orders) | APIOps | applications with Entra tokens | `validate-jwt`, roles, rate limits, correlation |
+| AI agents (API Platform Assistant) | Foundry CI/CD (`agents/`) | OpenAPI tools with the Foundry project's managed identity | the same API policies; read-only roles; caller attribution |
+| AI models (`gpt-4.1-mini`) | APIOps (`foundry-models-v1`) | `/models/v1` with `Models.Use` | `llm-token-limit`, token metrics, deployment allow-list |
+| MCP tools | APIOps (optional, preview) | APIM MCP server export | the underlying API's policies + tool allow-list |
+
+The agent demo: "Show me order 1024." → agent → Orders tool → APIM → private
+Orders API → answer, with APIM telemetry proving the path and a security test
+proving the direct path is blocked. Details in
+[docs/agentic-architecture.md](docs/agentic-architecture.md), [docs/ai-gateway.md](docs/ai-gateway.md), [docs/identity.md](docs/identity.md).
+
 ## The business problem
 
 Developer → ticket → platform engineer → manual APIM configuration. It does
@@ -31,17 +45,19 @@ folder and one PR.
 
 ```text
 terraform/bootstrap/            state storage, resource groups, OIDC identities (run once by a human)
-terraform/modules/              apim · networking · key-vault · monitoring · identity · app-service
+terraform/modules/              apim · networking · key-vault · monitoring · identity · app-service · foundry
 terraform/environments/{dev,prod}/   the platform; identical apart from tfvars
 apim/artifacts/                 the APIOps tree: APIs, products, policies, named values, loggers, diagnostics, version sets, backends
 apim/configuration.{dev,prod}.yaml   per-environment overrides (tokens filled from GitHub variables)
 apim/extractor.config.yaml      what the extractor may pull back into Git
 apis/<name>/README.md           owner, lifecycle, how to call
+agents/<name>/                  agent definition, instructions, tools (published contracts only), tests
+ai-gateway/README.md            map of the AI gateway artifacts inside apim/artifacts
 applications/<name>/            FastAPI backends + tests (zip-deployed to App Service)
 governance/.spectral.yaml       OpenAPI rules
 scripts/                        apiops · render-configuration · validate-* · detect-breaking-changes · smoke-test · test-rate-limit · verify-publish · retirement-guard · apim-drift
-.github/workflows/              terraform-ci · terraform-deploy · api-validation · apiops-publisher · api-promote · apiops-extractor · drift-detection · application-deploy
-docs/                           architecture · apiops · api-onboarding · terraform · security · operations · disaster-recovery · branch-protection · cost
+.github/workflows/              terraform-ci · terraform-deploy · api-validation · apiops-publisher · api-promote · apiops-extractor · drift-detection · application-deploy · agent-ci · agent-deploy
+docs/                           architecture · apiops · api-onboarding · agentic-architecture · ai-gateway · identity · terraform · security · operations · disaster-recovery · branch-protection · cost
 ```
 
 ## Why it is built this way
@@ -89,8 +105,8 @@ calls backends as its own identity; backends accept only that identity, so the
 gateway cannot be bypassed even on the Consumption tier. Prod adds VNet
 integration and private endpoints with the same code.
 
-**OIDC for GitHub Actions.** Six federated identities (platform, publisher,
-extractor × dev/prod) with least-privilege RBAC. No secrets exist in GitHub.
+**OIDC for GitHub Actions.** Eight federated identities (platform, APIOps
+publisher, APIOps extractor, agent deployer × dev/prod) with least-privilege RBAC. No secrets exist in GitHub.
 The OIDC subject is the security boundary, and it equals the GitHub
 environment, so Entra enforces the same approval gates GitHub does.
 
@@ -110,7 +126,37 @@ the extractor finds APIM drift. Both report; neither remediates.
 **Environment promotion.** The same commit SHA is published to prod with prod
 overrides after dev tests pass and production reviewers approve.
 
-Full answers: [docs/architecture.md](docs/architecture.md), [docs/apiops.md](docs/apiops.md), [docs/security.md](docs/security.md).
+**Reuse the API platform for AI.** Agents need exactly what applications
+need: authenticated, authorized, rate-limited, observed access to APIs. A
+second gateway for AI would duplicate policy, identity and monitoring and
+create a place where governance differs. The agent is one more caller.
+
+**APIM as the AI gateway.** It already validates identity and applies limits;
+the AI Gateway policies add token limits, quotas and token metrics for model
+traffic, and the same instance can front models and MCP tools. One place to
+look, one place to change.
+
+**Agents never call backends.** Backends accept only the gateway's identity,
+agent definitions cannot contain hosts, and CI plus a live security test keep
+it that way. Everything an agent does is a gateway request with its client id
+on it.
+
+**Three lifecycles, three tools.** Platform changes are rare and dangerous
+(Terraform, reviewed plans, destroy guard). API changes are frequent and
+belong to API teams (APIOps). Agent changes are frequent, belong to AI teams,
+and are versioned in Foundry (SDK-driven deploy). Coupling them would make
+every team wait on every other.
+
+**Agent identity is a workload identity.** The Foundry project's managed
+identity holds read-only roles granted by Terraform; users are authenticated
+by the application; user-scoped authorization is propagated by the
+application or asserted to the gateway, never by widening the agent's roles.
+
+**Preview features are optional.** MCP export and MCP OAuth in APIM are
+preview and the demo runs without them; token limits, token metrics, backend
+pools and the Foundry agent service are GA.
+
+Full answers: [docs/architecture.md](docs/architecture.md), [docs/apiops.md](docs/apiops.md), [docs/security.md](docs/security.md), [docs/agentic-architecture.md](docs/agentic-architecture.md), [docs/ai-gateway.md](docs/ai-gateway.md), [docs/identity.md](docs/identity.md).
 
 ## Onboarding an API
 
@@ -191,3 +237,16 @@ rather than deployed for appearance.
 | 27 | Versions and revisions | version sets, `;rev=` folders, `docs/api-onboarding.md` |
 | 28 | Centralized monitoring | APIOps logger/diagnostics → App Insights → Log Analytics |
 | 29-30 | Skills API deployed; Orders API onboarded into the same instance | evidence above |
+
+### Agentic extension
+
+| # | criterion | where |
+|---|---|---|
+| 1-3 | existing APIM reused; Terraform owns platform; APIOps owns APIs | `terraform/modules/foundry`, `apim/artifacts/apis/foundry-models-v1` |
+| 4-6 | separate agent lifecycle, GitHub Actions, OIDC | `agents/`, `agent-ci.yml`, `agent-deploy.yml`, `sp-cloudapiworkflow-agent-deployer-<env>` |
+| 7-8 | agent calls Orders through APIM, never the backend | end-to-end test + security test in `agent-deploy` |
+| 9-11 | workload identity, APIM policies govern agent traffic, backends protected | Foundry project identity + app roles; unchanged API policies; Easy Auth |
+| 12 | AI/agent telemetry observable | Foundry tracing connection, `X-Caller-Id`, token metrics, `docs/agentic-architecture.md` |
+| 13 | no credentials in agent instructions | `agent-ci` hygiene checks |
+| 14-15 | MCP documented; preview features identified | `docs/ai-gateway.md` capability table |
+| 16-18 | cost-conscious demo; production documented; unified governance | `docs/cost.md`, `docs/agentic-architecture.md`, this README |

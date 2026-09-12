@@ -15,6 +15,17 @@
     <set-header name="X-Correlation-Id" exists-action="override">
       <value>@((string)context.Variables["correlationId"])</value>
     </set-header>
+    <!-- Caller identity (azp/appid claim of the bearer token, if any) for attribution in telemetry.
+         Agents, applications and demo clients all show up here by their client id. -->
+    <set-variable name="callerId" value="@{
+      var jwt = context.Request.Headers.GetValueOrDefault("Authorization", "").AsJwt();
+      if (jwt == null) return "anonymous";
+      var azp = jwt.Claims.GetValueOrDefault("azp", "");
+      return string.IsNullOrEmpty(azp) ? jwt.Claims.GetValueOrDefault("appid", "unknown") : azp;
+    }" />
+    <set-header name="X-Caller-Id" exists-action="override">
+      <value>@((string)context.Variables["callerId"])</value>
+    </set-header>
     <!-- Never forward the consumer's subscription key or forwarded-for chain to backends -->
     <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
     <set-header name="X-Forwarded-For" exists-action="override">
@@ -27,6 +38,9 @@
   <outbound>
     <set-header name="X-Correlation-Id" exists-action="override">
       <value>@((string)context.Variables["correlationId"])</value>
+    </set-header>
+    <set-header name="X-Caller-Id" exists-action="override">
+      <value>@(context.Variables.GetValueOrDefault<string>("callerId", "anonymous"))</value>
     </set-header>
     <set-header name="Strict-Transport-Security" exists-action="override">
       <value>max-age=31536000; includeSubDomains</value>

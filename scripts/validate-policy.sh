@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Validate every APIM policy in the APIOps tree:
 #   * well-formed XML (policy expressions neutralised first)
-#   * non-global policies inherit with <base />
+#   * non-global policies inherit with <base />; policy fragments use a <fragment> root
 #   * API policies validate a JWT (unless the API is explicitly public)
 #   * no secrets, tenant ids, subscription ids or backend hostnames inline
 # Usage: scripts/validate-policy.sh [apim/artifacts]
@@ -27,7 +27,10 @@ for f in sorted(root.rglob("policy.xml")):
         ET.fromstring(neutralise(text))
     except ET.ParseError as e:
         errors.append(f"{rel}: not well-formed XML: {e}"); continue
-    if rel.parts[0] != "policy.xml" and "<base />" not in text and "<base/>" not in text:
+    if rel.parts[0] == "policy fragments":
+        if not text.lstrip().startswith("<!--") and "<fragment>" not in text: errors.append(f"{rel}: policy fragments must have a <fragment> root")
+        elif "<fragment>" not in text: errors.append(f"{rel}: policy fragments must have a <fragment> root")
+    elif rel.parts[0] != "policy.xml" and "<base />" not in text and "<base/>" not in text:
         errors.append(f"{rel}: must inherit the parent policy with <base />")
     if rel.parts[0] == "apis" and "<validate-jwt" not in text and "<!-- public-api -->" not in text:
         errors.append(f"{rel}: API policy has no <validate-jwt>; add one or mark the API with <!-- public-api -->")

@@ -1,0 +1,74 @@
+<!--
+  Foundry Models v1 policy (AI Gateway). Published by APIOps like any API.
+
+  Authentication : validate-jwt (issuer + audience)              -> 401
+  Authorization  : roles claim must contain Models.Use            -> 403
+  Token limits   : fragment ai-token-governance (llm-token-limit) -> 429
+  Observability  : fragment ai-observability (llm-emit-token-metric)
+  Backend        : named backend "foundry-models", called with the gateway's managed identity
+                   (Cognitive Services OpenAI User); no model key exists anywhere.
+  Only the deployments exposed here are reachable; the deployment name is validated.
+-->
+<policies>
+  <inbound>
+    <base />
+    <choose>
+      <when condition="@(context.Operation.UrlTemplate.EndsWith("/health"))">
+        <return-response>
+          <set-status code="200" reason="OK" />
+          <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+          </set-header>
+          <set-body>{"status":"ok","api":"foundry-models","version":"v1"}</set-body>
+        </return-response>
+      </when>
+    </choose>
+    <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="A valid Microsoft Entra access token is required." require-scheme="Bearer" output-token-variable-name="jwt">
+      <openid-config url="https://login.microsoftonline.com/{{tenant-id}}/v2.0/.well-known/openid-configuration" />
+      <audiences>
+        <audience>{{api-audience}}</audience>
+      </audiences>
+      <issuers>
+        <issuer>https://sts.windows.net/{{tenant-id}}/</issuer>
+        <issuer>https://login.microsoftonline.com/{{tenant-id}}/v2.0</issuer>
+      </issuers>
+    </validate-jwt>
+    <choose>
+      <when condition="@(!((Jwt)context.Variables["jwt"]).Claims.GetValueOrDefault("roles", "").Split(',').Any(r => r.Trim() == "Models.Use"))">
+        <return-response>
+          <set-status code="403" reason="Forbidden" />
+          <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+          </set-header>
+          <set-body>@(new JObject(new JProperty("error", new JObject(new JProperty("code", "Forbidden"), new JProperty("message", "The token does not carry the Models.Use application permission."), new JProperty("correlationId", context.Variables.GetValueOrDefault<string>("correlationId", context.RequestId.ToString()))))).ToString())</set-body>
+        </return-response>
+      </when>
+    </choose>
+    <!-- Only approved deployments; the list is governed here, not by callers -->
+    <choose>
+      <when condition="@(!new [] { "{{model-deployment}}" }.Contains(context.Request.MatchedParameters.GetValueOrDefault("deployment", "")))">
+        <return-response>
+          <set-status code="404" reason="Not Found" />
+          <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+          </set-header>
+          <set-body>{"error":{"code":"UnknownDeployment","message":"Only approved model deployments are exposed through the gateway."}}</set-body>
+        </return-response>
+      </when>
+    </choose>
+    <include-fragment fragment-id="ai-token-governance" />
+    <include-fragment fragment-id="ai-observability" />
+    <rate-limit-by-key calls="60" renewal-period="60" counter-key="@(((Jwt)context.Variables["jwt"]).Subject ?? context.Request.IpAddress)" />
+    <set-backend-service backend-id="foundry-models" />
+    <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>

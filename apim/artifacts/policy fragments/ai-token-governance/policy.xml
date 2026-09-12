@@ -1,0 +1,16 @@
+<!--
+  Policy fragment: AI token governance (include in the inbound section of any
+  model API). Per-caller tokens-per-minute plus a daily token quota, keyed by
+  the token subject set by validate-jwt in the including policy.
+  llm-token-limit: GA. Prompt tokens are estimated before the call so an
+  over-quota caller is rejected without spending model capacity.
+-->
+<fragment>
+  <llm-token-limit counter-key="@(((Jwt)context.Variables["jwt"]).Subject ?? context.Request.IpAddress)"
+                   tokens-per-minute="2000"
+                   token-quota="200000"
+                   token-quota-period="Daily"
+                   estimate-prompt-tokens="true"
+                   remaining-tokens-variable-name="remainingTokens"
+                   remaining-quota-tokens-header-name="x-ratelimit-remaining-quota-tokens" />
+</fragment>

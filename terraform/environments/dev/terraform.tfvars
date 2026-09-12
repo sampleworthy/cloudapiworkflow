@@ -17,12 +17,24 @@ api_app_roles = {
   "Skills.Read"  = "Read the skills catalogue"
   "Orders.Read"  = "Read orders"
   "Orders.Write" = "Create and update orders"
+  "Models.Use"   = "Call approved AI models through the gateway"
 }
+
+# Foundry: one small model deployment; the project identity may read Skills and Orders.
+foundry_model = {
+  deployment_name = "gpt-4.1-mini"
+  name            = "gpt-4.1-mini"
+  version         = "2025-04-14"
+  sku             = "GlobalStandard"
+  capacity        = 10
+}
+agent_app_roles             = ["Skills.Read", "Orders.Read"]
+agent_deployer_display_name = "sp-cloudapiworkflow-agent-deployer-dev"
 
 demo_clients = {
   agent = {
     description = "Demo AI agent / service caller with real permissions."
-    roles       = ["Skills.Read", "Orders.Read"]
+    roles       = ["Skills.Read", "Orders.Read", "Models.Use"]
   }
   unprivileged = {
     description = "Valid identity with no application permissions; proves 403 is enforced."

@@ -1,0 +1,18 @@
+{
+  "properties": {
+    "displayName": "Foundry Models",
+    "description": "Approved AI models behind the gateway: Entra authentication, Models.Use role, per-caller token limits and token metrics. Lifecycle: active. Owner: platform-team.",
+    "path": "models",
+    "protocols": ["https"],
+    "apiVersion": "v1",
+    "apiVersionSetId": "/apiVersionSets/foundry-models",
+    "apiRevision": "1",
+    "apiRevisionDescription": "Initial release: chat completions",
+    "isCurrent": true,
+    "subscriptionRequired": false,
+    "subscriptionKeyParameterNames": {
+      "header": "Ocp-Apim-Subscription-Key",
+      "query": "subscription-key"
+    }
+  }
+}

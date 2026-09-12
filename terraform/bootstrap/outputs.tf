@@ -25,7 +25,7 @@ output "platform_resource_group_id" {
 }
 
 output "deployer_client_ids" {
-  description = "GitHub repository variables: AZURE_PLATFORM_CLIENT_ID_<ENV>, AZURE_APIOPS_PUBLISHER_CLIENT_ID_<ENV>, AZURE_APIOPS_EXTRACTOR_CLIENT_ID_<ENV>."
+  description = "GitHub repository variables: AZURE_PLATFORM_CLIENT_ID_<ENV>, AZURE_APIOPS_PUBLISHER_CLIENT_ID_<ENV>, AZURE_APIOPS_EXTRACTOR_CLIENT_ID_<ENV>, AZURE_AGENT_DEPLOYER_CLIENT_ID_<ENV>."
   value       = { for k, app in azuread_application.deployer : k => app.client_id }
 }
 

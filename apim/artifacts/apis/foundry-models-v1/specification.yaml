@@ -1,0 +1,175 @@
+openapi: 3.0.3
+info:
+  title: Foundry Models
+  version: 1.0.0
+  description: |
+    Approved AI model deployments exposed through the shared gateway at
+    /models/v1. The surface is the Azure OpenAI chat-completions API; the
+    gateway adds Entra authentication (role Models.Use), per-caller token
+    limits, a daily token quota, token metrics and correlation. Consumers
+    never hold a model key.
+  contact:
+    name: Platform team
+    email: platform-team@example.com
+tags:
+  - name: models
+  - name: operations
+paths:
+  /health:
+    get:
+      tags: [operations]
+      operationId: getHealth
+      summary: Gateway liveness for the model API
+      description: Answered by the gateway; does not call a model.
+      security: []
+      responses:
+        "200":
+          description: Model gateway is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+                api: foundry-models
+                version: v1
+  /deployments/{deployment}/chat/completions:
+    post:
+      tags: [models]
+      operationId: createChatCompletion
+      summary: Chat completion against an approved deployment
+      description: Forwarded to the Foundry deployment named in the path with the gateway's managed identity.
+      parameters:
+        - name: deployment
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-z0-9.-]+$"
+        - name: api-version
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "2024-10-21"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCompletionRequest"
+            example:
+              messages:
+                - role: user
+                  content: Say hello in five words.
+              max_tokens: 32
+      responses:
+        "200":
+          description: Completion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatCompletionResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+components:
+  securitySchemes:
+    entraBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Microsoft Entra ID access token for audience api://<tenant>/cloudapiworkflow-<env> with role Models.Use
+  schemas:
+    Health:
+      type: object
+      required: [status, api, version]
+      properties:
+        status: { type: string }
+        api: { type: string }
+        version: { type: string }
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role: { type: string, enum: [system, user, assistant] }
+        content: { type: string }
+    ChatCompletionRequest:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+        max_tokens: { type: integer, minimum: 1 }
+        temperature: { type: number, minimum: 0, maximum: 2 }
+    ChatCompletionResponse:
+      type: object
+      required: [id, choices]
+      properties:
+        id: { type: string }
+        model: { type: string }
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              message:
+                $ref: "#/components/schemas/ChatMessage"
+              finish_reason: { type: string }
+        usage:
+          type: object
+          properties:
+            prompt_tokens: { type: integer }
+            completion_tokens: { type: integer }
+            total_tokens: { type: integer }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, correlationId]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            correlationId: { type: string }
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid access token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Token lacks the Models.Use role
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: Token limit or quota exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+security:
+  - entraBearer: []

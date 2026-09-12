@@ -54,7 +54,7 @@ change `.github/workflows/`, which is where deployment authority lives.
 | environment | protection | used by |
 |---|---|---|
 | `development` | none (auto-deploy after merge) | terraform-deploy dev, apiops-publisher, application-deploy, drift plan |
-| `production` | required reviewers (platform team), 5-minute wait timer, deployment branches: `main` only | terraform-deploy prod, api-promote; also gated by `PROD_ENABLED` until a prod subscription exists |
+| `production` | required reviewers (platform team), 5-minute wait timer, deployment branches: `main` only | terraform-deploy prod, api-promote, agent-deploy (production); also gated by `PROD_ENABLED` until a prod subscription exists |
 
 Environment names are part of the OIDC subject, so Entra enforces the same
 boundary GitHub does.
@@ -64,8 +64,8 @@ boundary GitHub does.
 | variable | source |
 |---|---|
 | `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID_DEV`, `AZURE_SUBSCRIPTION_ID_PROD` | bootstrap |
-| `AZURE_PLATFORM_CLIENT_ID_<ENV>`, `AZURE_APIOPS_PUBLISHER_CLIENT_ID_<ENV>`, `AZURE_APIOPS_EXTRACTOR_CLIENT_ID_<ENV>` | bootstrap output `github_variables` |
-| `APIM_NAME_<ENV>`, `APIM_GATEWAY_URL_<ENV>`, `APIM_RESOURCE_GROUP_<ENV>`, `API_AUDIENCE_<ENV>`, `AGENT_CLIENT_ID_<ENV>`, `UNPRIVILEGED_CLIENT_ID_<ENV>`, `APPINSIGHTS_ID_<ENV>`, `APPINSIGHTS_SECRET_ID_<ENV>`, `KEY_VAULT_NAME_<ENV>`, `BACKEND_URL_<API>_<ENV>` | written by `terraform-deploy` from the root's `github_variables` output |
+| `AZURE_PLATFORM_CLIENT_ID_<ENV>`, `AZURE_APIOPS_PUBLISHER_CLIENT_ID_<ENV>`, `AZURE_APIOPS_EXTRACTOR_CLIENT_ID_<ENV>`, `AZURE_AGENT_DEPLOYER_CLIENT_ID_<ENV>` | bootstrap output `github_variables` |
+| `APIM_NAME_<ENV>`, `APIM_GATEWAY_URL_<ENV>`, `APIM_RESOURCE_GROUP_<ENV>`, `API_AUDIENCE_<ENV>`, `AGENT_CLIENT_ID_<ENV>`, `UNPRIVILEGED_CLIENT_ID_<ENV>`, `APPINSIGHTS_ID_<ENV>`, `APPINSIGHTS_SECRET_ID_<ENV>`, `KEY_VAULT_NAME_<ENV>`, `BACKEND_URL_<API>_<ENV>`, `FOUNDRY_PROJECT_ENDPOINT_<ENV>`, `FOUNDRY_OPENAI_ENDPOINT_<ENV>`, `FOUNDRY_MODEL_DEPLOYMENT_<ENV>`, `AGENT_IDENTITY_CLIENT_ID_<ENV>`, `AGENT_IDENTITY_PRINCIPAL_ID_<ENV>`, `LOG_ANALYTICS_WORKSPACE_ID_<ENV>` | written by `terraform-deploy` from the root's `github_variables` output |
 | `PROD_ENABLED` | `false` until a prod subscription is bootstrapped |
 
 ## Applying the ruleset with gh
