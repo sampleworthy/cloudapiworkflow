@@ -1,0 +1,70 @@
+# Promotion: publish a commit that already succeeded in dev to PRODUCTION.
+# Same artifacts, prod overrides (apim/configuration.prod.yaml), production
+# environment reviewers. Gated by PROD_ENABLED until a prod subscription exists.
+name: api-promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Commit on main to promote (must have a successful apiops-publisher run)"
+        required: true
+      mode:
+        description: "delta = artifacts changed in that commit (deletes honoured); full = PUT every artifact at that commit"
+        type: choice
+        options: [delta, full]
+        default: delta
+
+permissions: { contents: read }
+
+jobs:
+  precheck:
+    name: dev succeeded for this commit?
+    runs-on: ubuntu-latest
+    steps:
+      - name: require a successful apiops-publisher run on main for the SHA
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          ok=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/apiops-publisher.yml/runs?head_sha=${{ inputs.commit_sha }}&status=success&branch=main" --jq '.total_count')
+          [ "$ok" -gt 0 ] && echo "dev publish succeeded for ${{ inputs.commit_sha }}" || { echo "::error::no successful dev publish for ${{ inputs.commit_sha }}; promote only what dev has proven"; exit 1; }
+
+  publish-prod:
+    name: prod / publish
+    needs: precheck
+    if: vars.PROD_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency: { group: apiops-prod, cancel-in-progress: false }
+    permissions: { contents: read, id-token: write, pull-requests: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ inputs.commit_sha }}", fetch-depth: 0 }
+      - name: export repository variables (non-secret) as environment variables
+        run: |
+          cat > "$RUNNER_TEMP/vars.json" <<'JSON'
+          ${{ toJSON(vars) }}
+          JSON
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
+      - name: retirement guard
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: scripts/retirement-guard.sh ${{ inputs.commit_sha }}
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_APIOPS_PUBLISHER_CLIENT_ID_PROD }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_PROD }}
+      - name: render configuration.prod.yaml
+        run: scripts/render-configuration.sh apim/configuration.prod.yaml PROD > "$RUNNER_TEMP/configuration.prod.yaml"
+      - name: run APIOps publisher
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID_PROD }}
+          AZURE_RESOURCE_GROUP_NAME: ${{ vars.APIM_RESOURCE_GROUP_PROD }}
+          API_MANAGEMENT_SERVICE_NAME: ${{ vars.APIM_NAME_PROD }}
+          API_MANAGEMENT_SERVICE_OUTPUT_FOLDER_PATH: ${{ github.workspace }}/apim/artifacts
+          CONFIGURATION_YAML_PATH: ${{ runner.temp }}/configuration.prod.yaml
+          COMMIT_ID: ${{ inputs.mode == 'delta' && inputs.commit_sha || '' }}
+        run: |
+          export AZURE_BEARER_TOKEN=$(az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv)
+          scripts/apiops.sh publisher
+      - name: verify
+        run: scripts/verify-publish.sh "${{ vars.APIM_RESOURCE_GROUP_PROD }}" "${{ vars.APIM_NAME_PROD }}"

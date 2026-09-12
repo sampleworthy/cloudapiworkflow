@@ -1,10 +1,11 @@
-# Shared Azure API Management instance.
+# Shared Azure API Management instance - the SERVICE only.
 #
-# This module is applied by the PLATFORM layer only. API teams never touch it:
-# onboarding an API adds resources *inside* this instance through the apim-api
-# module in the api-onboarding layer, which references this instance by name
-# via remote state. If a plan ever shows -/+ on azurerm_api_management.this,
-# that is a platform change and must go through the platform workflow.
+# Terraform owns the ARM resource (SKU, identity, network, TLS posture) and
+# its resource-log wiring. Everything inside the instance (APIs, products,
+# policies, named values, loggers, diagnostics, version sets, backends) is
+# owned by Microsoft APIOps from apim/artifacts and is never declared here.
+# A plan that shows -/+ on this resource is a platform migration, not a
+# routine change; prevent_destroy makes it an explicit decision.
 
 locals {
   is_consumption = startswith(var.sku_name, "Consumption")
@@ -37,7 +38,6 @@ resource "azurerm_api_management" "this" {
     }
   }
 
-  # Platform-wide hardening: no legacy TLS/ciphers on the gateway.
   security {
     backend_ssl30_enabled  = false
     backend_tls10_enabled  = false
@@ -50,121 +50,11 @@ resource "azurerm_api_management" "this" {
   tags = var.tags
 
   lifecycle {
-    # Onboarding APIs must never be able to replace the gateway. Any change
-    # that would force replacement fails the plan instead.
     prevent_destroy = true
   }
 }
 
-# ---------------------------------------------------------------------------
-# Named values consumed by policies ({{tenant-id}} etc.). Policies in Git
-# reference these by name so no tenant identifiers live in the XML.
-# ---------------------------------------------------------------------------
-
-resource "azurerm_api_management_named_value" "this" {
-  for_each = var.named_values
-
-  name                = each.key
-  display_name        = each.key
-  api_management_name = azurerm_api_management.this.name
-  resource_group_name = var.resource_group_name
-  value               = each.value.value
-  secret              = each.value.secret
-}
-
-# ---------------------------------------------------------------------------
-# Global policy: correlation id, security headers, standard error shape.
-# ---------------------------------------------------------------------------
-
-resource "azurerm_api_management_policy" "global" {
-  api_management_id = azurerm_api_management.this.id
-  xml_content       = var.global_policy_xml
-
-  depends_on = [azurerm_api_management_named_value.this]
-}
-
-# ---------------------------------------------------------------------------
-# Products. APIs are attached to these by the onboarding layer; the products
-# themselves are shared and never recreated per API.
-# ---------------------------------------------------------------------------
-
-resource "azurerm_api_management_product" "this" {
-  for_each = var.products
-
-  product_id            = each.key
-  api_management_name   = azurerm_api_management.this.name
-  resource_group_name   = var.resource_group_name
-  display_name          = each.value.display_name
-  description           = each.value.description
-  subscription_required = each.value.subscription_required
-  approval_required     = each.value.subscription_required ? each.value.approval_required : null
-  subscriptions_limit   = each.value.subscription_required ? each.value.subscriptions_limit : null
-  published             = true
-}
-
-resource "azurerm_api_management_product_policy" "this" {
-  for_each = { for k, p in var.products : k => p if p.policy_xml != null }
-
-  product_id          = azurerm_api_management_product.this[each.key].product_id
-  api_management_name = azurerm_api_management.this.name
-  resource_group_name = var.resource_group_name
-  xml_content         = each.value.policy_xml
-
-  depends_on = [azurerm_api_management_named_value.this]
-}
-
-# ---------------------------------------------------------------------------
-# Observability: Application Insights logger + gateway-wide diagnostics.
-# Per-API diagnostics are added by the apim-api module and reuse this logger.
-# ---------------------------------------------------------------------------
-
-resource "azurerm_api_management_logger" "app_insights" {
-  name                = "appinsights"
-  api_management_name = azurerm_api_management.this.name
-  resource_group_name = var.resource_group_name
-  resource_id         = var.app_insights_id
-  description         = "Shared Application Insights logger for all APIs"
-
-  application_insights {
-    connection_string = var.app_insights_connection_string
-  }
-}
-
-resource "azurerm_api_management_diagnostic" "app_insights" {
-  identifier               = "applicationinsights"
-  resource_group_name      = var.resource_group_name
-  api_management_name      = azurerm_api_management.this.name
-  api_management_logger_id = azurerm_api_management_logger.app_insights.id
-
-  sampling_percentage       = var.diagnostic_sampling_percentage
-  always_log_errors         = true
-  log_client_ip             = true
-  verbosity                 = "information"
-  http_correlation_protocol = "W3C"
-
-  frontend_request {
-    body_bytes     = 0
-    headers_to_log = ["X-Correlation-Id", "User-Agent"]
-  }
-
-  frontend_response {
-    body_bytes     = 0
-    headers_to_log = ["X-Correlation-Id", "Retry-After"]
-  }
-
-  backend_request {
-    body_bytes     = 0
-    headers_to_log = ["X-Correlation-Id"]
-  }
-
-  backend_response {
-    body_bytes     = 0
-    headers_to_log = ["X-Correlation-Id"]
-  }
-}
-
-# Resource logs to Log Analytics. Not available on the Consumption tier, so
-# the setting is created only when the tier supports it.
+# Resource logs to Log Analytics. Not available on the Consumption tier.
 resource "azurerm_monitor_diagnostic_setting" "gateway" {
   count = local.is_consumption ? 0 : 1
 
@@ -174,9 +64,5 @@ resource "azurerm_monitor_diagnostic_setting" "gateway" {
 
   enabled_log {
     category = "GatewayLogs"
-  }
-
-  enabled_log {
-    category = "WebSocketConnectionLogs"
   }
 }

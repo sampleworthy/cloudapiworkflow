@@ -1,0 +1,60 @@
+# Backend application deployment: tests and zip-deploys every application in
+# applications/<api>/ to the web app Terraform tagged api=<name>, then waits
+# for the API to answer through the gateway (if it is published).
+name: application-deploy
+
+on:
+  push:
+    branches: [main]
+    paths: ["applications/**", ".github/workflows/application-deploy.yml"]
+  workflow_dispatch:
+
+permissions: { contents: read }
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs: { apps: "${{ steps.list.outputs.apps }}" }
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: echo "apps=$(ls -d applications/*/ | xargs -n1 basename | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: discover
+    runs-on: ubuntu-latest
+    environment: development
+    permissions: { contents: read, id-token: write }
+    strategy: { fail-fast: false, matrix: { app: "${{ fromJson(needs.discover.outputs.apps) }}" } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: unit tests
+        working-directory: applications/${{ matrix.app }}
+        run: pip install --quiet -r requirements-dev.txt && pytest -q
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_PLATFORM_CLIENT_ID_DEV }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+      - name: find target web app (tag api=${{ matrix.app }})
+        id: target
+        run: |
+          name=$(az webapp list -g "${{ vars.APIM_RESOURCE_GROUP_DEV }}" --query "[?tags.api=='${{ matrix.app }}'].name | [0]" -o tsv)
+          [ -z "$name" ] && echo "::notice::no web app tagged api=${{ matrix.app }}; skipping"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: package and zip-deploy (Oryx build on App Service)
+        if: steps.target.outputs.name != ''
+        run: |
+          (cd applications/${{ matrix.app }} && zip -qr "$RUNNER_TEMP/app.zip" app requirements.txt)
+          az webapp deploy -g "${{ vars.APIM_RESOURCE_GROUP_DEV }}" -n "${{ steps.target.outputs.name }}" --src-path "$RUNNER_TEMP/app.zip" --type zip --clean true --restart true -o none
+      - name: wait for health through the gateway (when the API is published)
+        if: steps.target.outputs.name != ''
+        run: |
+          d=$(ls -d apim/artifacts/apis/${{ matrix.app }}-v*/ 2>/dev/null | head -1)
+          [ -z "$d" ] && { echo "::notice::${{ matrix.app }} is not published to APIM yet; backend deployed, gateway check skipped"; exit 0; }
+          path=$(python3 -c "import json;p=json.load(open('${d}apiInformation.json'))['properties'];print(p['path']+'/'+p.get('apiVersion',''))")
+          url="${{ vars.APIM_GATEWAY_URL_DEV }}/${path%/}/health"
+          for i in $(seq 1 30); do code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$url"); echo "$url -> $code"; [ "$code" = "200" ] && exit 0; sleep 10; done
+          echo "::error::${{ matrix.app }} did not become healthy through the gateway"; exit 1

@@ -1,0 +1,8 @@
+{
+  "properties": {
+    "displayName": "Internal APIs",
+    "description": "First-party APIs for internal services. Entra token required; no subscription key.",
+    "subscriptionRequired": false,
+    "state": "published"
+  }
+}

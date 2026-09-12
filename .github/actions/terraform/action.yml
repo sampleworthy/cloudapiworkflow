@@ -6,24 +6,24 @@ description: >
 
 inputs:
   working_directory:
-    description: Terraform root, e.g. terraform/api-onboarding/dev
+    description: Terraform root, e.g. terraform/environments/dev
     required: true
   terraform_version:
-    description: Pinned Terraform version (matches .terraform-version)
-    default: "1.5.7"
+    default: "1.16.2"
   apply:
     description: "true to apply the plan produced in this run"
     default: "false"
-  guard_shared_apim:
-    description: "true to fail if the plan changes azurerm_api_management (API onboarding must never touch the gateway)"
+  guard_critical:
+    description: "true to fail when the plan deletes or replaces APIM, the VNet, Key Vault or state storage (override with ALLOW_DESTRUCTIVE=true)"
+    default: "true"
+  detailed_exitcode:
+    description: "true to expose has_changes without failing (drift detection)"
     default: "false"
 
 outputs:
   summary:
-    description: Plan summary line
     value: ${{ steps.plan.outputs.summary }}
   has_changes:
-    description: "true when the plan is not a no-op"
     value: ${{ steps.plan.outputs.has_changes }}
 
 runs:
@@ -56,33 +56,23 @@ runs:
         summary=$(grep -E '^(Plan:|No changes\.)' plan.log | tail -1 || echo "Plan: see log")
         echo "summary=$summary" >> "$GITHUB_OUTPUT"
         if grep -q '^No changes\.' plan.log; then echo "has_changes=false" >> "$GITHUB_OUTPUT"; else echo "has_changes=true" >> "$GITHUB_OUTPUT"; fi
-        {
-          echo "### \`${{ inputs.working_directory }}\`"
-          echo
-          echo "**$summary**"
-          echo
-          echo '<details><summary>plan</summary>'
-          echo
-          echo '```hcl'
-          head -c 60000 plan.txt
-          echo '```'
-          echo '</details>'
-        } >> "$GITHUB_STEP_SUMMARY"
+        { echo "### \`${{ inputs.working_directory }}\`"; echo; echo "**$summary**"; echo
+          echo '<details><summary>plan</summary>'; echo; echo '```hcl'; head -c 60000 plan.txt; echo '```'; echo '</details>'; } >> "$GITHUB_STEP_SUMMARY"
 
-    - name: guard - the shared APIM instance must not change
-      if: inputs.guard_shared_apim == 'true'
+    - name: guard - critical platform resources must not be destroyed or replaced
+      if: inputs.guard_critical == 'true'
       shell: bash
       working-directory: ${{ inputs.working_directory }}
       run: |
-        touched=$(jq -r '[.resource_changes[]? | select(.type == "azurerm_api_management") | select(.change.actions != ["no-op"]) | "\(.address) \(.change.actions | join(","))"] | .[]' plan.json)
-        if [ -n "$touched" ]; then
-          echo "::error::This plan would change the shared API Management instance. API onboarding must never do that:"
-          echo "$touched"
-          exit 1
+        critical='["azurerm_api_management","azurerm_virtual_network","azurerm_key_vault","azurerm_storage_account","azurerm_resource_group"]'
+        hits=$(jq -r --argjson c "$critical" '[.resource_changes[]? | select(.type as $t | $c | index($t)) | select(.change.actions | index("delete")) | "\(.address) \(.change.actions | join(","))"] | .[]' plan.json)
+        if [ -n "$hits" ] && [ "${ALLOW_DESTRUCTIVE:-false}" != "true" ]; then
+          echo "::error::Plan would destroy or replace a critical platform resource. Set ALLOW_DESTRUCTIVE=true on an approved, deliberate migration run to proceed."
+          echo "$hits"; exit 1
         fi
         destroys=$(jq '[.resource_changes[]? | select(.change.actions | index("delete"))] | length' plan.json)
-        echo "shared APIM untouched; resources to destroy in this plan: $destroys"
-        if [ "$destroys" != "0" ]; then echo "::warning::plan destroys $destroys resource(s); review carefully"; fi
+        echo "critical resources safe; resources to destroy in this plan: $destroys"
+        [ "$destroys" != "0" ] && echo "::warning::plan destroys $destroys resource(s); review carefully" || true
 
     - name: terraform apply
       if: inputs.apply == 'true'

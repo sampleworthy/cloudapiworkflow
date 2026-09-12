@@ -1,12 +1,14 @@
 # ---------------------------------------------------------------------------
 # Bootstrap layer
 #
-# Creates the things every other layer depends on and that no pipeline should
-# be able to change:
-#   1. the Terraform state storage account (one container per layer)
+# Creates the things every other pipeline depends on and that no pipeline
+# should be able to change:
+#   1. the Terraform state storage account (containers: bootstrap, platform)
 #   2. the platform resource group (empty; the platform layer imports it)
-#   3. one deployer identity per (layer, environment) with GitHub OIDC
-#      federated credentials and least-privilege RBAC
+#   3. one federated identity per (role, environment):
+#        platform          Terraform deployer (Contributor on the group)
+#        apiops-publisher  writes API artifacts into the existing APIM instance
+#        apiops-extractor  reads APIM configuration for drift / sync PRs
 # ---------------------------------------------------------------------------
 
 data "azurerm_client_config" "current" {}
@@ -26,23 +28,29 @@ locals {
     }
   }
 
-  # (layer, environment) pairs -> one service principal each
+  roles = ["platform", "apiops-publisher", "apiops-extractor"]
+
   deployers = merge([
     for env, cfg in local.environments : {
-      "platform-${env}" = merge(cfg, { layer = "platform", env = env })
-      "api-${env}"      = merge(cfg, { layer = "api", env = env })
+      for role in local.roles : "${role}-${env}" => merge(cfg, { role = role, env = env })
     }
   ]...)
 
-  # Federated credential subjects GitHub will present for each deployer.
-  # environment:* is only issued to jobs running inside that GitHub environment,
-  # which is where approval gates live. pull_request lets PR plans run for dev.
+  # OIDC subjects GitHub presents. environment:* tokens are only issued to jobs
+  # inside that GitHub environment (where approval gates live). The extractor
+  # is read-only and runs from schedules on main, so it trusts the main ref.
   federated_subjects = {
-    for key, d in local.deployers : key => concat(
-      ["repo:${var.github_repository}:environment:${d.github_environment}"],
-      d.allow_pr_plan ? ["repo:${var.github_repository}:pull_request"] : []
+    for key, d in local.deployers : key => (
+      d.role == "apiops-extractor"
+      ? ["repo:${var.github_repository}:ref:refs/heads/main", "repo:${var.github_repository}:environment:${d.github_environment}"]
+      : concat(
+        ["repo:${var.github_repository}:environment:${d.github_environment}"],
+        d.allow_pr_plan && d.role == "platform" ? ["repo:${var.github_repository}:pull_request"] : []
+      )
     )
   }
+
+  rbac_enabled = { for key, d in local.deployers : key => d.subscription_id != null }
 }
 
 # ---------------------------------------------------------------------------
@@ -64,8 +72,6 @@ resource "azurerm_resource_group" "platform" {
   })
 
   lifecycle {
-    # The platform layer imports and manages this group. Bootstrap must never
-    # tear it down underneath it.
     prevent_destroy = true
     ignore_changes  = [tags]
   }
@@ -109,14 +115,13 @@ resource "azurerm_storage_account" "tfstate" {
 }
 
 resource "azurerm_storage_container" "layers" {
-  for_each = toset(["bootstrap", "platform", "api-onboarding"])
+  for_each = toset(["bootstrap", "platform"])
 
   name                  = each.key
   storage_account_id    = azurerm_storage_account.tfstate.id
   container_access_type = "private"
 }
 
-# The human running bootstrap needs data-plane access to migrate its own state.
 resource "azurerm_role_assignment" "bootstrap_operator_state" {
   scope                = azurerm_storage_container.layers["bootstrap"].id
   role_definition_name = "Storage Blob Data Contributor"
@@ -124,17 +129,16 @@ resource "azurerm_role_assignment" "bootstrap_operator_state" {
 }
 
 # ---------------------------------------------------------------------------
-# Deployer identities (GitHub OIDC -> Entra -> Azure RBAC)
+# Federated identities (GitHub OIDC -> Entra -> Azure RBAC)
 # ---------------------------------------------------------------------------
 
 resource "azuread_application" "deployer" {
   for_each = local.deployers
 
   display_name = "sp-cloudapiworkflow-${each.key}"
-  description  = "GitHub Actions deployer for the ${each.value.layer} Terraform layer, ${each.value.env} environment. Authenticates with workload identity federation only; no credentials are issued."
+  description  = "GitHub Actions identity: ${each.value.role}, ${each.value.env}. Workload identity federation only; no credentials are issued."
   owners       = [data.azuread_client_config.current.object_id]
-
-  tags = ["cloudapiworkflow", each.value.layer, each.value.env, "github-oidc"]
+  tags         = ["cloudapiworkflow", each.value.role, each.value.env, "github-oidc"]
 }
 
 resource "azuread_service_principal" "deployer" {
@@ -143,8 +147,7 @@ resource "azuread_service_principal" "deployer" {
   client_id                    = azuread_application.deployer[each.key].client_id
   app_role_assignment_required = false
   owners                       = [data.azuread_client_config.current.object_id]
-
-  tags = ["cloudapiworkflow", each.value.layer, each.value.env, "github-oidc"]
+  tags                         = ["cloudapiworkflow", each.value.role, each.value.env, "github-oidc"]
 }
 
 resource "azuread_application_federated_identity_credential" "github" {
@@ -157,7 +160,7 @@ resource "azuread_application_federated_identity_credential" "github" {
   }
 
   application_id = azuread_application.deployer[each.value.key].id
-  display_name   = replace(replace(each.value.subject, "repo:${var.github_repository}:", "github-"), ":", "-")
+  display_name   = replace(replace(replace(each.value.subject, "repo:${var.github_repository}:", "github-"), ":", "-"), "/", "-")
   description    = "GitHub Actions OIDC: ${each.value.subject}"
   audiences      = ["api://AzureADTokenExchange"]
   issuer         = "https://token.actions.githubusercontent.com"
@@ -165,90 +168,47 @@ resource "azuread_application_federated_identity_credential" "github" {
 }
 
 # ---------------------------------------------------------------------------
-# Azure RBAC - dev only unless a prod subscription is supplied
+# Azure RBAC (dev only unless a prod subscription is supplied)
 # ---------------------------------------------------------------------------
 
 locals {
-  rbac_enabled = { for key, d in local.deployers : key => d.subscription_id != null }
+  # role name -> list of Azure built-in roles on the platform resource group
+  azure_roles = {
+    platform         = ["Contributor", "User Access Administrator"]
+    apiops-publisher = ["Reader", "API Management Service Contributor"]
+    apiops-extractor = ["Reader", "API Management Service Reader Role"]
+  }
 
-  platform_rg_scope = azurerm_resource_group.platform.id
+  azure_role_assignments = {
+    for pair in flatten([
+      for key, d in local.deployers : [
+        for r in local.azure_roles[d.role] : { key = key, role = r }
+      ] if local.rbac_enabled[key]
+    ]) : "${pair.key}|${pair.role}" => pair
+  }
 }
 
-# Platform deployer: owns everything inside rg-cloudapiworkflow, including the
-# RBAC it hands out to managed identities and the API deployer.
-resource "azurerm_role_assignment" "platform_contributor" {
-  for_each = { for k, d in local.deployers : k => d if d.layer == "platform" && local.rbac_enabled[k] }
+resource "azurerm_role_assignment" "platform_group" {
+  for_each = local.azure_role_assignments
 
-  scope                = local.platform_rg_scope
-  role_definition_name = "Contributor"
-  principal_id         = azuread_service_principal.deployer[each.key].object_id
+  scope                = azurerm_resource_group.platform.id
+  role_definition_name = each.value.role
+  principal_id         = azuread_service_principal.deployer[each.value.key].object_id
 }
 
-resource "azurerm_role_assignment" "platform_uaa" {
-  for_each = { for k, d in local.deployers : k => d if d.layer == "platform" && local.rbac_enabled[k] }
-
-  scope                = local.platform_rg_scope
-  role_definition_name = "User Access Administrator"
-  principal_id         = azuread_service_principal.deployer[each.key].object_id
-}
-
+# Only the Terraform deployer touches state.
 resource "azurerm_role_assignment" "platform_state" {
-  for_each = { for k, d in local.deployers : k => d if d.layer == "platform" && local.rbac_enabled[k] }
+  for_each = { for k, d in local.deployers : k => d if d.role == "platform" && local.rbac_enabled[k] }
 
   scope                = azurerm_storage_container.layers["platform"].id
   role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = azuread_service_principal.deployer[each.key].object_id
-}
-
-# API deployer: may manage APIs inside the existing APIM instance and the
-# backend web apps, and nothing else in the group.
-resource "azurerm_role_assignment" "api_reader" {
-  for_each = { for k, d in local.deployers : k => d if d.layer == "api" && local.rbac_enabled[k] }
-
-  scope                = local.platform_rg_scope
-  role_definition_name = "Reader"
-  principal_id         = azuread_service_principal.deployer[each.key].object_id
-}
-
-resource "azurerm_role_assignment" "api_apim_contributor" {
-  for_each = { for k, d in local.deployers : k => d if d.layer == "api" && local.rbac_enabled[k] }
-
-  scope                = local.platform_rg_scope
-  role_definition_name = "API Management Service Contributor"
-  principal_id         = azuread_service_principal.deployer[each.key].object_id
-}
-
-resource "azurerm_role_assignment" "api_website_contributor" {
-  for_each = { for k, d in local.deployers : k => d if d.layer == "api" && local.rbac_enabled[k] }
-
-  scope                = local.platform_rg_scope
-  role_definition_name = "Website Contributor"
-  principal_id         = azuread_service_principal.deployer[each.key].object_id
-}
-
-resource "azurerm_role_assignment" "api_state" {
-  for_each = { for k, d in local.deployers : k => d if d.layer == "api" && local.rbac_enabled[k] }
-
-  scope                = azurerm_storage_container.layers["api-onboarding"].id
-  role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = azuread_service_principal.deployer[each.key].object_id
-}
-
-# Read-only on the platform state so terraform_remote_state can resolve APIM.
-resource "azurerm_role_assignment" "api_platform_state_reader" {
-  for_each = { for k, d in local.deployers : k => d if d.layer == "api" && local.rbac_enabled[k] }
-
-  scope                = azurerm_storage_container.layers["platform"].id
-  role_definition_name = "Storage Blob Data Reader"
   principal_id         = azuread_service_principal.deployer[each.key].object_id
 }
 
 # ---------------------------------------------------------------------------
-# Microsoft Graph application permissions
-#
-# Both layers create Entra app registrations (the platform creates the shared
-# agent client; the API layer creates one resource app per API). OwnedBy keeps
-# each identity limited to the registrations it created itself.
+# Microsoft Graph application permissions. Only the platform deployer creates
+# Entra objects (the API resource app and the demo clients); OwnedBy limits
+# it to registrations it created itself. APIOps identities need nothing.
 # ---------------------------------------------------------------------------
 
 data "azuread_application_published_app_ids" "well_known" {}
@@ -260,20 +220,18 @@ data "azuread_service_principal" "msgraph" {
 locals {
   graph_roles = {
     platform = [
-      "Application.ReadWrite.OwnedBy", # create/manage the shared agent client app it owns
-      "Application.Read.All",          # resolve the API deployer SP and the APIM managed identity
+      "Application.ReadWrite.OwnedBy",   # create/manage the resource app and demo clients it owns
+      "Application.Read.All",            # resolve the APIM managed identity's client id
+      "AppRoleAssignment.ReadWrite.All", # grant demo clients app roles on the resource app
     ]
-    api = [
-      "Application.ReadWrite.OwnedBy",   # create/manage the per-API resource apps it owns
-      "Application.Read.All",            # resolve the shared agent client and APIM identity
-      "AppRoleAssignment.ReadWrite.All", # grant the agent client roles on each API
-    ]
+    apiops-publisher = []
+    apiops-extractor = []
   }
 
   graph_role_assignments = {
     for pair in flatten([
       for key, d in local.deployers : [
-        for role in local.graph_roles[d.layer] : { key = key, role = role }
+        for role in local.graph_roles[d.role] : { key = key, role = role }
       ]
     ]) : "${pair.key}|${pair.role}" => pair
   }

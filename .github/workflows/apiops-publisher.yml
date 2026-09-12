@@ -1,0 +1,134 @@
+# APIOps publisher: after a merge to main, publishes the changed APIM
+# artifacts into the EXISTING dev instance, verifies them, and runs the
+# post-deployment tests (health, auth matrix, rate limit, backend protection).
+name: apiops-publisher
+
+on:
+  push:
+    branches: [main]
+    paths: ["apim/**", ".github/workflows/apiops-publisher.yml"]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "delta = only artifacts changed in this commit (deletes honoured); full = PUT every artifact"
+        type: choice
+        options: [delta, full]
+        default: delta
+
+permissions: { contents: read }
+
+jobs:
+  publish-dev:
+    name: dev / publish
+    runs-on: ubuntu-latest
+    environment: development
+    concurrency: { group: apiops-dev, cancel-in-progress: false }
+    permissions: { contents: read, id-token: write, pull-requests: read }
+    outputs:
+      changed_apis: ${{ steps.changed.outputs.apis }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: export repository variables (non-secret) as environment variables
+        run: |
+          cat > "$RUNNER_TEMP/vars.json" <<'JSON'
+          ${{ toJSON(vars) }}
+          JSON
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
+
+      - name: retirement guard (deleting an API needs an approved retirement PR)
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: scripts/retirement-guard.sh ${{ github.sha }}
+
+      - id: changed
+        name: list changed API folders
+        run: |
+          apis=$(git diff --name-only ${{ github.sha }}~1 ${{ github.sha }} -- 'apim/artifacts/apis/*/**' | awk -F/ '{print $4}' | sort -u | jq -R . | jq -sc .)
+          echo "apis=$apis" >> "$GITHUB_OUTPUT"; echo "changed: $apis"
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_APIOPS_PUBLISHER_CLIENT_ID_DEV }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+
+      - name: render configuration.dev.yaml from repository variables
+        run: scripts/render-configuration.sh apim/configuration.dev.yaml DEV > "$RUNNER_TEMP/configuration.dev.yaml"
+
+      - name: run APIOps publisher (OIDC bearer token, no secrets)
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+          AZURE_RESOURCE_GROUP_NAME: ${{ vars.APIM_RESOURCE_GROUP_DEV }}
+          API_MANAGEMENT_SERVICE_NAME: ${{ vars.APIM_NAME_DEV }}
+          API_MANAGEMENT_SERVICE_OUTPUT_FOLDER_PATH: ${{ github.workspace }}/apim/artifacts
+          CONFIGURATION_YAML_PATH: ${{ runner.temp }}/configuration.dev.yaml
+          COMMIT_ID: ${{ (github.event_name == 'push' || inputs.mode == 'delta') && github.sha || '' }}
+        run: |
+          export AZURE_BEARER_TOKEN=$(az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv)
+          scripts/apiops.sh publisher
+
+      - name: verify published APIs (path / version / revision)
+        run: |
+          mapfile -t apis < <(echo '${{ steps.changed.outputs.apis }}' | jq -r '.[]')
+          scripts/verify-publish.sh "${{ vars.APIM_RESOURCE_GROUP_DEV }}" "${{ vars.APIM_NAME_DEV }}" "${apis[@]}" | tee verify.log
+          { echo '### Publish verification (dev)'; echo '```'; cat verify.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  test-dev:
+    name: dev / post-deployment tests
+    needs: publish-dev
+    runs-on: ubuntu-latest
+    environment: development
+    permissions: { contents: read, id-token: write }
+    steps:
+      - uses: actions/checkout@v4
+      - name: export repository variables (non-secret) as environment variables
+        run: |
+          cat > "$RUNNER_TEMP/vars.json" <<'JSON'
+          ${{ toJSON(vars) }}
+          JSON
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
+      - run: pip install --quiet pyyaml
+
+      # Tokens for the two demo clients via workload identity federation (the
+      # job's OIDC token is trusted by both client apps for this environment).
+      - name: acquire agent and unprivileged tokens
+        env:
+          TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          API_AUDIENCE: ${{ vars.API_AUDIENCE_DEV }}
+        run: |
+          JWT=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)
+          for c in AGENT UNPRIVILEGED; do
+            id_var="${c}_CLIENT_ID_DEV"; client_id="${{ toJSON(vars) }}"
+            client_id=$(echo "$client_id" | jq -r --arg k "$id_var" '.[$k]')
+            az login --service-principal -u "$client_id" --federated-token "$JWT" --tenant "$TENANT_ID" --allow-no-subscriptions -o none
+            tok=$(az account get-access-token --resource "$API_AUDIENCE" --query accessToken -o tsv)
+            echo "::add-mask::$tok"; echo "${c}_TOKEN=$tok" >> "$GITHUB_ENV"; az logout
+          done
+
+      - name: smoke + authorization matrix + backend protection, every API
+        run: |
+          set -o pipefail; fail=0
+          for d in apim/artifacts/apis/*/; do
+            api=$(basename "$d"); app=$(echo "$api" | sed -E 's/-v[0-9]+(;rev=[0-9]+)?$//' | tr 'a-z-' 'A-Z_')
+            export APIM_GATEWAY_URL="$APIM_GATEWAY_URL_DEV"; export BACKEND_URL=$(printenv "BACKEND_URL_${app}_DEV" || true)
+            scripts/smoke-test.sh "$api" | tee -a smoke.log || fail=1
+          done
+          { echo '### Post-deployment tests (dev)'; echo '```'; cat smoke.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $fail
+
+      - name: rate-limit enforcement (429 with Retry-After)
+        env: { APIM_GATEWAY_URL: "${{ vars.APIM_GATEWAY_URL_DEV }}" }
+        run: |
+          for d in apim/artifacts/apis/*/; do scripts/test-rate-limit.sh "$(basename "$d")" | tee -a rate.log; done
+          { echo '### Rate limit (dev)'; echo '```'; cat rate.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_APIOPS_PUBLISHER_CLIENT_ID_DEV }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+      - name: APIs now in the existing instance
+        run: |
+          { echo "### APIs in \`${{ vars.APIM_NAME_DEV }}\` (same instance, resource id unchanged)"; echo '```'
+            az apim api list -g "${{ vars.APIM_RESOURCE_GROUP_DEV }}" -n "${{ vars.APIM_NAME_DEV }}" --query "[].{api:name,path:path,version:apiVersion,revision:apiRevision}" -o table; echo '```'
+            echo; echo "App Insights: requests for the tests above -> \`AppRequests | where TimeGenerated > ago(15m) | summarize count() by tostring(Properties['API Name']), ResultCode\`"; } >> "$GITHUB_STEP_SUMMARY"

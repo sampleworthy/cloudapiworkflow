@@ -1,0 +1,22 @@
+# Scope for the APIOps extractor (drift detection and operator-driven sync).
+# Listing artifacts explicitly keeps the extractor from pulling in objects the
+# platform does not govern through Git (e.g. portal-created subscriptions).
+# Add every API here when it is onboarded.
+apis:
+  - skills-api-v1
+namedValues:
+  - tenant-id
+  - environment
+  - api-audience
+  - appinsights-connection-string
+loggers:
+  - appinsights
+diagnostics:
+  - applicationinsights
+products:
+  - internal-apis
+  - agent-apis
+backends:
+  - skills-api
+versionSets:
+  - skills-api

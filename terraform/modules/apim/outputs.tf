@@ -20,15 +20,6 @@ output "public_ip_addresses" {
   value       = azurerm_api_management.this.public_ip_addresses
 }
 
-output "logger_id" {
-  value = azurerm_api_management_logger.app_insights.id
-}
-
-output "product_ids" {
-  description = "Map of product key to product id, for the onboarding layer."
-  value       = { for k, p in azurerm_api_management_product.this : k => p.product_id }
-}
-
 output "sku_name" {
   value = azurerm_api_management.this.sku_name
 }

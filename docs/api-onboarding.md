@@ -1,131 +1,120 @@
-# Onboarding an API
+# Onboarding, changing and retiring an API
 
-Adding an API is a pull request that adds one folder. Nothing under
-`terraform/` changes for dev; prod needs one line in a tfvars file.
+Adding an API is a pull request that adds one folder under `apim/artifacts/apis/`
+and a few one-line links. No Terraform runs.
 
-## 1. Create the folder
+## 1. Add the artifacts
 
-```
-apis/orders-api/
-├── api.yaml              metadata (this IS the registration)
-├── openapi.yaml          the contract (OpenAPI 3.x)
-├── policies/inbound.xml  API policy (starts with <base />)
-└── README.md
-applications/orders-api/  backend code, only if backend.type is app_service
-```
-
-`api.yaml` fields (validated by `schemas/api.schema.json`):
-
-```yaml
-name: orders-api            # == folder name, ends with -api
-displayName: Orders API
-path: orders                # served at /orders/<version>
-version: v1                 # APIM version set, Segment scheme
-product: internal-apis      # internal-apis | partner-apis | agent-apis
-backend:
-  type: app_service         # app_service | external | mock
-authentication:
-  type: entra
-  audience: orders-api      # -> api://<tenant-id>/orders-api-<env>
-  roles:
-    Orders.Read: Read orders
-    Orders.Write: Create and update orders
-  requiredRoles: [Orders.Read, Orders.Write]   # any-of, read operations
-  writeRoles: [Orders.Write]                   # any-of, non-GET operations
-  allowedClients: [agent]                      # shared clients granted every role
-rateLimit: { calls: 60, renewalPeriod: 60 }
+```text
+apim/artifacts/apis/orders-api-v1/apiInformation.json                      path, version, version set, revision
+apim/artifacts/apis/orders-api-v1/specification.yaml                       OpenAPI 3.x
+apim/artifacts/apis/orders-api-v1/policy.xml                               validate-jwt, roles, rate limit, backend
+apim/artifacts/apis/orders-api-v1/diagnostics/applicationinsights/diagnosticInformation.json
+apim/artifacts/version sets/orders-api/versionSetInformation.json         one per logical API
+apim/artifacts/backends/orders-api/backendInformation.json                 named backend (URL overridden per env)
+apim/artifacts/products/internal-apis/apis/orders-api-v1/productApiInformation.json   product link ({})
+apim/configuration.dev.yaml   +  backends: orders-api url {#BACKEND_URL_ORDERS_API#}
+apim/configuration.prod.yaml  +  same
+apim/extractor.config.yaml    +  apis: orders-api-v1, backends: orders-api, versionSets: orders-api
+apis/orders-api/README.md     owner, lifecycle, how to call
 ```
 
-Backend types:
+Copy `skills-api-v1` and edit. `apiInformation.json` for a versioned API:
 
-| type | what the platform does | who provides the URL |
-|---|---|---|
-| `app_service` | creates `app-<name>-<suffix>` on the shared plan, Easy Auth locked to APIM's identity; `application-deploy` ships the code | the platform |
-| `external` | nothing; APIM forwards to the URL | `backend.url`, or `backend.urlVariable` resolved from `backend_urls` in the environment's tfvars |
-| `mock` | APIM returns the OpenAPI examples after validating the token | none (prod usually overrides to `external` through `backend_urls`) |
+```json
+{
+  "properties": {
+    "displayName": "Orders API",
+    "description": "Create and query customer orders. Lifecycle: active. Owner: orders-team.",
+    "path": "orders",
+    "protocols": ["https"],
+    "apiVersion": "v1",
+    "apiVersionSetId": "/apiVersionSets/orders-api",
+    "apiRevision": "1",
+    "isCurrent": true,
+    "subscriptionRequired": false
+  }
+}
+```
+
+The policy needs only the API's role names; audience and tenant come from
+named values. If the API needs a role that does not exist yet, add it to
+`api_app_roles` in `terraform/environments/*/terraform.tfvars` in a separate
+platform PR first (the platform team owns identity).
 
 ## 2. Open a pull request
 
-Branch `feature/onboard-orders-api`, fill the PR template. `api-ci` runs:
+Branch `feature/onboard-orders-api`, fill the PR template. `api-validation` runs:
 
-1. `scripts/onboarding-check.sh` – schema, folder/name match, unique gateway path, roles consistency, policy XML, OpenAPI major version, `/health` present
-2. Spectral (`.spectral.yaml`) – OpenAPI 3.x, operationIds, security, 401/429 responses, no backend hosts in `servers`
-3. `terraform fmt` / `validate` for both onboarding roots and a check that dev and prod roots are identical
-4. `terraform plan` against **dev** with the API deployer identity (OIDC subject `pull_request`)
-5. **guard**: the plan is rejected if it changes `azurerm_api_management`
-6. The plan is posted on the PR as a comment
+1. `scripts/validate-artifacts.sh` – JSON parses; version set, backend and product links resolve; unique gateway path; OpenAPI major version == `apiVersion`; `/health` exists; extractor scope covers the API
+2. `scripts/validate-openapi.sh` – Spectral with `governance/.spectral.yaml`
+3. `scripts/detect-breaking-changes.sh` – oasdiff against `main` for every changed specification
+4. `scripts/validate-policy.sh` – well-formed XML, `<base />`, `validate-jwt` present, no secrets / ids / hostnames
+5. gitleaks
+6. deletion guard – deleted API folders require the `api-retirement` label
 
-## 3. What the plan looks like
+CODEOWNERS requests the owning API team and the API platform team.
 
-For `orders-api` (app_service backend, two roles) the dev plan is:
+## 3. Merge → publish → test
 
-```
-Plan: 12 to add, 0 to change, 0 to destroy.
+`apiops-publisher` (environment `development`):
 
-  + azurerm_api_management_api_version_set.this["orders-api"]
-  + module.identity["orders-api"].azuread_application.this
-  + module.identity["orders-api"].azuread_service_principal.this
-  + module.identity["orders-api"].random_uuid.role["Orders.Read"]
-  + module.identity["orders-api"].random_uuid.role["Orders.Write"]
-  + module.identity["orders-api"].azuread_app_role_assignment.clients["agent|Orders.Read"]
-  + module.identity["orders-api"].azuread_app_role_assignment.clients["agent|Orders.Write"]
-  + module.backend_app["orders-api"].azurerm_linux_web_app.this
-  + module.backend_app["orders-api"].azurerm_monitor_diagnostic_setting.this[0]
-  + module.api["orders-api"].azurerm_api_management_api.this
-  + module.api["orders-api"].azurerm_api_management_api_policy.this
-  + module.api["orders-api"].azurerm_api_management_backend.this
-  + module.api["orders-api"].azurerm_api_management_product_api.this["internal-apis"]
-  + module.api["orders-api"].azurerm_api_management_api_diagnostic.this[0]
-```
+1. retirement guard on the merged commit
+2. OIDC login as the publisher identity; bearer token for the tool
+3. render `configuration.dev.yaml` from repository variables
+4. publisher with `COMMIT_ID=<merge sha>`: creates the version set, backend, API, policy, diagnostic and product link in the **existing** instance
+5. `scripts/verify-publish.sh`: `az apim api show` confirms path `orders`, version `v1`, revision `1`
+6. post-deployment tests as the two demo clients (tokens via federated credentials, no secrets):
 
-What is **not** there: `azurerm_api_management`, anything in `terraform/platform`,
-anything belonging to `skills-api`.
-
-## 4. Review and merge
-
-CODEOWNERS requests the API platform team and the owning API team. Reviewers
-check the plan comment against the PR template checklist. Merge to `main`
-requires green `api-ci` and the required approvals (see
-[branch-protection.md](branch-protection.md)).
-
-## 5. After merge
-
-`api-deploy` runs inside the `development` environment:
-
-1. OIDC login as `sp-cloudapiworkflow-api-dev`
-2. `terraform plan` (fresh) + guard + `terraform apply`
-3. `application-deploy`: pytest, zip-deploy `applications/orders-api` to `app-orders-api-<suffix>`, wait for `GET /orders/v1/health` through the gateway
-4. smoke tests as the agent client (federated, no secret): health 200, no token 401, token 200, direct backend 401
-5. lists the APIs now in the shared instance in the job summary
-
-Prod runs the same jobs in the `production` environment (required reviewers)
-when `PROD_ENABLED` is set, for the APIs listed in
-`terraform/api-onboarding/prod/terraform.tfvars`.
-
-## 6. Result
-
-```
-apim-cloudapiworkflow-<suffix>      (same resource id as before the PR)
-├── skills-api-v1     /skills/v1
-└── orders-api-v1     /orders/v1
-```
-
-## Changing an existing API
-
-| change | how |
+| test | expected |
 |---|---|
-| non-breaking contract change | edit `openapi.yaml`; APIM re-imports it in place |
-| policy change | edit `policies/inbound.xml` |
-| new role | add to `authentication.roles` (+ `requiredRoles`/`writeRoles`); the app registration gains the role, the agent client is granted it |
-| rate limit | edit `rateLimit` |
-| breaking change | new folder `apis/orders-api-v2/` with `versionSet: orders-api`, `version: v2`, `name: orders-api-v2`; v1 stays untouched and both are served |
-| retire a version | delete the folder; the plan shows only that version's resources being destroyed |
+| `GET /orders/v1/health` | 200 |
+| `GET /orders/v1/orders`, no token | 401 |
+| garbage bearer token | 401 |
+| valid token, no roles (unprivileged client) | 403 |
+| valid token with `Orders.Read` (agent client) | 200 |
+| 70 requests inside the 60/min limit | at least one 429 with `Retry-After` |
+| `GET https://app-orders-api-<suffix>.azurewebsites.net/health` (no APIM) | 401 |
 
-## Local checks before pushing
+7. job summary lists the APIs in the instance and links the App Insights query.
+
+Backend code ships independently through `application-deploy` when
+`applications/orders-api/**` changes; the web app itself already exists.
+
+## 4. Promote to production
+
+`api-promote` with the merge SHA. It refuses SHAs without a successful dev
+publish, then runs inside the `production` environment (required reviewers)
+with `configuration.prod.yaml`. Promotion is by commit; nothing is re-authored.
+
+## Versions vs revisions
+
+| change | mechanism | folder |
+|---|---|---|
+| non-breaking contract change (new optional field, new operation) | edit `specification.yaml` in place | same |
+| policy or configuration change you want to stage | **revision**: copy to `orders-api-v1;rev=2` with `apiRevision: "2"`, `isCurrent: false`; test at `/orders/v1;rev=2/...`; flip `isCurrent` in a second PR | sibling `;rev=2` |
+| breaking contract change | **version**: new folder `orders-api-v2` with `apiVersion: "v2"` and the same `apiVersionSetId`; v1 untouched | new |
+
+oasdiff blocks a breaking change to an existing version. A new version folder
+has no base to compare, so it passes. Consumers move on their own schedule.
+
+## Retirement
+
+```text
+active ──► deprecated (≥ 90 days) ──► retired
+```
+
+1. **Deprecate**: PR that prefixes the description with `[DEPRECATED until YYYY-MM-DD]`, adds `Sunset` and `Deprecation` response headers in the API policy's `<outbound>`, and updates `apis/<name>/README.md`. Consumers are notified through the product's subscriber list / the platform changelog.
+2. **Retire**: after the date, a PR labelled `api-retirement` deletes `apim/artifacts/apis/<api>/` and the product link. `api-validation` refuses the deletion without the label; `apiops-publisher` refuses to publish a commit that deletes APIs unless the merged PR carried it. Prod retirement additionally passes the `production` environment reviewers via `api-promote`.
+3. The version set stays until its last version is gone; the backend entity is removed with the last API that references it.
+
+Nothing is deleted because a file "disappeared": a deletion is a reviewed,
+labelled change, and the publisher only deletes in delta mode.
+
+## Local checks
 
 ```bash
-scripts/onboarding-check.sh
-scripts/validate-openapi.sh
-terraform -chdir=terraform/api-onboarding/dev fmt -check -recursive ../..
-(cd applications/orders-api && pip install -r requirements-dev.txt && pytest)
+pip install pyyaml
+scripts/validate-artifacts.sh && scripts/validate-policy.sh && scripts/validate-openapi.sh
+scripts/detect-breaking-changes.sh origin/main
 ```

@@ -1,0 +1,9 @@
+{
+  "properties": {
+    "displayName": "appinsights-connection-string",
+    "secret": true,
+    "keyVault": {
+      "secretIdentifier": "https://kv-placeholder.vault.azure.net/secrets/appinsights-connection-string"
+    }
+  }
+}

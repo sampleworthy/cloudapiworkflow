@@ -1,0 +1,7 @@
+{
+  "properties": {
+    "displayName": "Skills API",
+    "description": "Versions of the Skills API. Path segment versioning: /skills/v1, /skills/v2.",
+    "versioningScheme": "Segment"
+  }
+}

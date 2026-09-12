@@ -1,0 +1,72 @@
+# APIOps extractor: reads the live APIM configuration, compares it with Git
+# (artifacts + environment overrides) and opens a PULL REQUEST when they
+# differ. Never writes to main. Manually triggered, and reused by
+# drift-detection on a schedule.
+name: apiops-extractor
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev]
+        default: dev
+  workflow_call:
+    inputs:
+      environment: { type: string, default: dev }
+
+permissions: { contents: read }
+
+jobs:
+  extract:
+    name: extract ${{ inputs.environment }} and compare with Git
+    runs-on: ubuntu-latest
+    permissions: { contents: write, id-token: write, pull-requests: write }
+    steps:
+      - uses: actions/checkout@v4
+      - name: export repository variables (non-secret) as environment variables
+        run: |
+          cat > "$RUNNER_TEMP/vars.json" <<'JSON'
+          ${{ toJSON(vars) }}
+          JSON
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
+      - run: pip install --quiet pyyaml
+      - name: environment suffix
+        id: env
+        run: echo "suffix=$(echo '${{ inputs.environment }}' | tr a-z A-Z)" >> "$GITHUB_OUTPUT"
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ inputs.environment == 'prod' && vars.AZURE_APIOPS_EXTRACTOR_CLIENT_ID_PROD || vars.AZURE_APIOPS_EXTRACTOR_CLIENT_ID_DEV }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ inputs.environment == 'prod' && vars.AZURE_SUBSCRIPTION_ID_PROD || vars.AZURE_SUBSCRIPTION_ID_DEV }}
+
+      - name: run APIOps extractor (read-only identity)
+        run: |
+          S=${{ steps.env.outputs.suffix }}
+          export AZURE_SUBSCRIPTION_ID=$(printenv AZURE_SUBSCRIPTION_ID_$S) AZURE_RESOURCE_GROUP_NAME=$(printenv APIM_RESOURCE_GROUP_$S) API_MANAGEMENT_SERVICE_NAME=$(printenv APIM_NAME_$S)
+          export API_MANAGEMENT_SERVICE_OUTPUT_FOLDER_PATH="$GITHUB_WORKSPACE/apim/extracted" CONFIGURATION_YAML_PATH="$GITHUB_WORKSPACE/apim/extractor.config.yaml"
+          export AZURE_BEARER_TOKEN=$(az account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv)
+          scripts/apiops.sh extractor
+          scripts/render-configuration.sh apim/configuration.${{ inputs.environment }}.yaml "$S" > "$RUNNER_TEMP/overrides.yaml"
+
+      - name: compare live configuration with Git
+        id: drift
+        run: |
+          set +e
+          python3 scripts/apim-drift.py --extracted apim/extracted --overrides "$RUNNER_TEMP/overrides.yaml" --copy | tee drift.txt; code=${PIPESTATUS[0]}
+          echo "drift=$([ $code -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          { echo "### APIM configuration drift (${{ inputs.environment }})"; echo '```'; cat drift.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          [ $code -eq 0 ] || [ $code -eq 2 ]
+          rm -rf apim/extracted
+
+      - name: open a pull request with the extracted changes (review required)
+        if: steps.drift.outputs.drift == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: apiops/extract-${{ inputs.environment }}
+          title: "apiops: ${{ inputs.environment }} APIM configuration differs from Git"
+          labels: apim-drift
+          commit-message: "apiops: extract ${{ inputs.environment }} configuration drift"
+          body-path: drift.txt
+          delete-branch: true
