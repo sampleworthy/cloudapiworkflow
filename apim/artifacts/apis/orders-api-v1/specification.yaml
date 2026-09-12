@@ -1,0 +1,231 @@
+openapi: 3.0.3
+info:
+  title: Orders API
+  version: 1.0.0
+  description: |
+    Create and query customer orders through the shared API Management gateway
+    at /orders/v1. Reads require Orders.Read or Orders.Write; writes require
+    Orders.Write.
+  contact:
+    name: Orders team
+    email: orders-team@example.com
+tags:
+  - name: orders
+  - name: operations
+paths:
+  /health:
+    get:
+      tags: [operations]
+      operationId: getHealth
+      summary: Liveness probe
+      description: Liveness probe.
+      security: []
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+                api: orders-api
+                version: v1
+        "503":
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /orders:
+    get:
+      tags: [orders]
+      operationId: listOrders
+      summary: List orders
+      description: List orders.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/OrderStatus"
+      responses:
+        "200":
+          description: Orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+              example:
+                - id: ord-1001
+                  customerId: cust-42
+                  status: confirmed
+                  total: 129.99
+                  currency: USD
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    post:
+      tags: [orders]
+      operationId: createOrder
+      summary: Create an order
+      description: Requires the Orders.Write application role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewOrder"
+            example:
+              customerId: cust-42
+              items:
+                - sku: SKU-1
+                  quantity: 2
+                  unitPrice: 19.99
+              currency: USD
+      responses:
+        "201":
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /orders/{orderId}:
+    get:
+      tags: [orders]
+      operationId: getOrder
+      summary: Get an order by id
+      description: Get an order by id.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^ord-[0-9]+$"
+      responses:
+        "200":
+          description: The order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+components:
+  securitySchemes:
+    entraBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Microsoft Entra ID access token for audience api://<tenant>/orders-api-<env>
+  schemas:
+    Health:
+      type: object
+      required: [status, api, version]
+      properties:
+        status: { type: string }
+        api: { type: string }
+        version: { type: string }
+    OrderStatus:
+      type: string
+      enum: [pending, confirmed, shipped, cancelled]
+    OrderItem:
+      type: object
+      required: [sku, quantity, unitPrice]
+      properties:
+        sku: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        unitPrice: { type: number, minimum: 0 }
+    NewOrder:
+      type: object
+      required: [customerId, items, currency]
+      properties:
+        customerId: { type: string }
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/OrderItem"
+        currency: { type: string, minLength: 3, maxLength: 3 }
+    Order:
+      type: object
+      required: [id, customerId, status, total, currency]
+      properties:
+        id: { type: string }
+        customerId: { type: string }
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        total: { type: number }
+        currency: { type: string }
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItem"
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, correlationId]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            correlationId: { type: string }
+  responses:
+    BadRequest:
+      description: Invalid request body
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid access token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Token lacks a required role
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+security:
+  - entraBearer: []
