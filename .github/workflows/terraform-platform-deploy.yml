@@ -32,7 +32,6 @@ jobs:
       subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
       tenant_id: ${{ vars.AZURE_TENANT_ID }}
       apply: true
-      adopt_resource_group: true
 
   deploy-prod:
     name: prod
@@ -49,4 +48,3 @@ jobs:
       subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID_PROD }}
       tenant_id: ${{ vars.AZURE_TENANT_ID }}
       apply: true
-      adopt_resource_group: true
