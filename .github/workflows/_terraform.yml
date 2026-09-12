@@ -4,6 +4,8 @@
 #                  environment name is the only OIDC subject Entra accepts for that deployer identity).
 #                  After apply, the root's github_variables output is published as repository
 #                  variables <KEY>_<ENV> so APIOps and test jobs never read Terraform state.
+# Callers must grant the union of both jobs' permissions (GitHub validates every job,
+# including the one that is skipped).
 name: _terraform
 
 on:

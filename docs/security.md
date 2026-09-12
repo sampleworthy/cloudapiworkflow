@@ -17,6 +17,7 @@ flowchart LR
 | demo clients `agent`, `unprivileged` | none (runtime callers) | none | `environment:<env>` |
 
 * No `AZURE_CLIENT_SECRET` and no repository secrets exist. Every identity's only credential is a federated identity credential trusting `https://token.actions.githubusercontent.com` for a specific subject.
+* Subjects use GitHub's immutable form `repo:<owner>@<owner_id>/<repo>@<repo_id>:<context>` (the repository default), so a renamed or re-created repository never inherits trust.
 * The subject is the boundary. A job only receives an `environment:production` token inside the `production` environment, which requires reviewers. A workflow on a feature branch cannot deploy anywhere, whatever YAML it contains.
 * The publisher cannot change the gateway service itself (no Contributor); Terraform's identity cannot publish APIs (it never runs the publisher); the extractor cannot write to Azure at all.
 * APIOps tools receive `AZURE_BEARER_TOKEN` from `az account get-access-token` after the OIDC login.

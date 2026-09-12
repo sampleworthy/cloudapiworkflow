@@ -1,10 +1,12 @@
 # DEV platform. Cost-conscious: Consumption APIM, one B1 plan, public
 # endpoints guarded by identity. subscription_id comes from TF_VAR_subscription_id.
-environment         = "dev"
-location            = "eastus2"
-resource_group_name = "rg-cloudapiworkflow"
-name_prefix         = "cloudapiworkflow"
-github_repository   = "sampleworthy/cloudapiworkflow"
+environment          = "dev"
+location             = "eastus2"
+resource_group_name  = "rg-cloudapiworkflow"
+name_prefix          = "cloudapiworkflow"
+github_repository    = "sampleworthy/cloudapiworkflow"
+github_owner_id      = 86179207
+github_repository_id = 1367640405
 
 apim_sku_name         = "Consumption_0"
 apim_publisher_name   = "Cloud API Workflow Platform Team"

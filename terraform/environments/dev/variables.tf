@@ -33,6 +33,16 @@ variable "github_repository" {
   type        = string
 }
 
+variable "github_owner_id" {
+  description = "Numeric GitHub owner id (immutable OIDC subject)."
+  type        = number
+}
+
+variable "github_repository_id" {
+  description = "Numeric GitHub repository id (immutable OIDC subject)."
+  type        = number
+}
+
 # --- APIM ------------------------------------------------------------------
 
 variable "apim_sku_name" {

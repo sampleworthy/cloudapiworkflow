@@ -104,7 +104,7 @@ resource "azurerm_linux_web_app" "this" {
 }
 
 resource "azurerm_monitor_diagnostic_setting" "this" {
-  count = var.log_analytics_workspace_id == null ? 0 : 1
+  count = var.enable_diagnostics ? 1 : 0
 
   name                       = "diag-${var.name}"
   target_resource_id         = azurerm_linux_web_app.this.id
@@ -129,7 +129,7 @@ resource "azurerm_monitor_diagnostic_setting" "this" {
 
 # Optional private endpoint (prod).
 resource "azurerm_private_endpoint" "this" {
-  count = var.private_endpoint_subnet_id == null ? 0 : 1
+  count = var.enable_private_endpoint ? 1 : 0
 
   name                = "pe-${var.name}"
   location            = var.location

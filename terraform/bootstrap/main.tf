@@ -37,16 +37,21 @@ locals {
     }
   ]...)
 
-  # OIDC subjects GitHub presents. environment:* tokens are only issued to jobs
-  # inside that GitHub environment (where approval gates live). The extractor
-  # is read-only and runs from schedules on main, so it trusts the main ref.
+  # OIDC subjects GitHub presents. GitHub issues immutable subjects by default:
+  # repo:<owner>@<owner_id>/<repo>@<repo_id>:<context>, so a renamed or
+  # re-created repository never inherits a trust relationship.
+  # environment:* tokens are only issued to jobs inside that GitHub environment
+  # (where approval gates live). The extractor is read-only and runs from
+  # schedules on main, so it also trusts the main ref.
+  github_subject_prefix = "repo:${split("/", var.github_repository)[0]}@${var.github_owner_id}/${split("/", var.github_repository)[1]}@${var.github_repository_id}"
+
   federated_subjects = {
     for key, d in local.deployers : key => (
       d.role == "apiops-extractor"
-      ? ["repo:${var.github_repository}:ref:refs/heads/main", "repo:${var.github_repository}:environment:${d.github_environment}"]
+      ? ["${local.github_subject_prefix}:ref:refs/heads/main", "${local.github_subject_prefix}:environment:${d.github_environment}"]
       : concat(
-        ["repo:${var.github_repository}:environment:${d.github_environment}"],
-        d.allow_pr_plan && d.role == "platform" ? ["repo:${var.github_repository}:pull_request"] : []
+        ["${local.github_subject_prefix}:environment:${d.github_environment}"],
+        d.allow_pr_plan && d.role == "platform" ? ["${local.github_subject_prefix}:pull_request"] : []
       )
     )
   }
@@ -161,7 +166,7 @@ resource "azuread_application_federated_identity_credential" "github" {
   }
 
   application_id = azuread_application.deployer[each.value.key].id
-  display_name   = replace(replace(replace(each.value.subject, "repo:${var.github_repository}:", "github-"), ":", "-"), "/", "-")
+  display_name   = substr(replace(replace(replace(replace(each.value.subject, "${local.github_subject_prefix}:", "github-"), ":", "-"), "/", "-"), "@", "-"), 0, 120)
   description    = "GitHub Actions OIDC: ${each.value.subject}"
   audiences      = ["api://AzureADTokenExchange"]
   issuer         = "https://token.actions.githubusercontent.com"

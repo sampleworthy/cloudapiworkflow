@@ -111,7 +111,7 @@ resource "azurerm_monitor_diagnostic_setting" "this" {
 # Optional private endpoint (prod): resolves the account, OpenAI and Foundry
 # API hostnames through the three privatelink zones the networking module owns.
 resource "azurerm_private_endpoint" "this" {
-  count = var.private_endpoint_subnet_id == null ? 0 : 1
+  count = var.enable_private_endpoint ? 1 : 0
 
   name                = "pe-${var.name}"
   location            = var.location
