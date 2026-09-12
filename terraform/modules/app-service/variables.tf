@@ -45,6 +45,12 @@ variable "vnet_integration_subnet_id" {
   default = null
 }
 
+variable "enable_private_endpoint" {
+  description = "Create a private endpoint (needs private_endpoint_subnet_id). A boolean rather than a null-check so count is known at plan time."
+  type        = bool
+  default     = false
+}
+
 variable "private_endpoint_subnet_id" {
   type    = string
   default = null
@@ -83,6 +89,12 @@ variable "auth_allowed_audiences" {
 variable "app_insights_connection_string" {
   type      = string
   sensitive = true
+}
+
+variable "enable_diagnostics" {
+  description = "Send AppService* logs to log_analytics_workspace_id."
+  type        = bool
+  default     = true
 }
 
 variable "log_analytics_workspace_id" {

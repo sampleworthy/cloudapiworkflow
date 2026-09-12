@@ -92,6 +92,7 @@ module "key_vault" {
   tenant_id                     = local.tenant_id
   purge_protection_enabled      = var.key_vault_purge_protection
   public_network_access_enabled = !var.enable_private_endpoints
+  enable_private_endpoint       = var.enable_private_endpoints
   private_endpoint_subnet_id    = var.enable_private_endpoints ? module.networking.private_endpoint_subnet_id : null
   private_dns_zone_id           = var.enable_private_endpoints ? module.networking.private_dns_zone_ids["privatelink.vaultcore.azure.net"] : null
   secrets_officer_principal_ids = [data.azurerm_client_config.current.object_id]
@@ -258,6 +259,7 @@ module "backend_app" {
 
   vnet_integration_subnet_id    = module.networking.app_integration_subnet_id
   public_network_access_enabled = !var.enable_private_endpoints
+  enable_private_endpoint       = var.enable_private_endpoints
   private_endpoint_subnet_id    = var.enable_private_endpoints ? module.networking.private_endpoint_subnet_id : null
   private_dns_zone_id           = var.enable_private_endpoints ? module.networking.private_dns_zone_ids["privatelink.azurewebsites.net"] : null
   allowed_ip_addresses          = try(coalesce(module.apim.public_ip_addresses, []), [])
@@ -304,6 +306,7 @@ module "foundry" {
   model                = var.foundry_model
 
   public_network_access_enabled = !var.enable_private_endpoints
+  enable_private_endpoint       = var.enable_private_endpoints
   private_endpoint_subnet_id    = var.enable_private_endpoints ? module.networking.private_endpoint_subnet_id : null
   private_dns_zone_ids = var.enable_private_endpoints ? [
     module.networking.private_dns_zone_ids["privatelink.cognitiveservices.azure.com"],
