@@ -31,7 +31,7 @@ jobs:
             diff -u "terraform/environments/dev/$f" "terraform/environments/prod/$f" || { echo "::error::environments differ in $f; only terraform.tfvars and backend.tf may differ"; exit 1; }
           done
       - name: trivy IaC misconfiguration scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with: { scan-type: config, scan-ref: terraform, severity: "HIGH,CRITICAL", exit-code: "1", trivyignores: .trivyignore }
       - name: gitleaks secret scan
         uses: gitleaks/gitleaks-action@v2
