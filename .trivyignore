@@ -1,4 +1,11 @@
 # Trivy misconfiguration findings accepted for this repository.
 # Every entry needs a reason and an owner; reviewed by the platform team.
-#
-# (none yet)
+
+# AVD-AZU-0012 / AZU-0012: storage account without network rules (default action Allow).
+# Applies to the Terraform state account (terraform/bootstrap). GitHub-hosted runners have no
+# fixed egress IPs, so a network allow-list would break every deployment. Mitigations in place:
+# shared-key auth disabled (Entra-only), no anonymous blobs, TLS 1.2, HTTPS only, blob versioning
+# and soft delete, RBAC scoped per container. Production guidance (docs/terraform.md): self-hosted
+# runners in the VNet with a private endpoint on the account. Owner: platform-team.
+AVD-AZU-0012
+AZU-0012
