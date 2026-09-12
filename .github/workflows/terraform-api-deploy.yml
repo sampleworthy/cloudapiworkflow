@@ -1,0 +1,115 @@
+# API onboarding deployment: after merge to main, applies API changes into the
+# EXISTING APIM instance, deploys backend code for APIs hosted on the platform,
+# then smoke-tests every API through the gateway (and proves the backend
+# cannot be called directly).
+name: api-deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apis/**"
+      - "terraform/api-onboarding/**"
+      - "terraform/modules/apim-api/**"
+      - "terraform/modules/identity/**"
+      - "terraform/modules/app-service/**"
+      - ".github/workflows/terraform-api-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply-dev:
+    name: dev / terraform
+    uses: ./.github/workflows/_terraform.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      working_directory: terraform/api-onboarding/dev
+      environment: development
+      client_id: ${{ vars.AZURE_API_CLIENT_ID_DEV }}
+      subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+      tenant_id: ${{ vars.AZURE_TENANT_ID }}
+      apply: true
+      guard_shared_apim: true
+
+  apps-dev:
+    name: dev / applications
+    needs: apply-dev
+    uses: ./.github/workflows/api-application-deploy.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: development
+      client_id: ${{ vars.AZURE_API_CLIENT_ID_DEV }}
+      subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+      tenant_id: ${{ vars.AZURE_TENANT_ID }}
+
+  smoke-dev:
+    name: dev / smoke tests
+    needs: apps-dev
+    runs-on: ubuntu-latest
+    environment: development
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: outputs-development
+          path: outputs
+      - run: pip install --quiet pyyaml
+
+      # Log in as the demo agent client using the job's GitHub OIDC token.
+      # The agent client trusts subject repo:<repo>:environment:development,
+      # so this only works from inside this environment - no secret involved.
+      - name: acquire agent identity (workload identity federation)
+        env:
+          TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+        run: |
+          AGENT_CLIENT_ID=$(jq -r '.agent_client_id.value' outputs/outputs.json)
+          JWT=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+                "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)
+          az login --service-principal -u "$AGENT_CLIENT_ID" --federated-token "$JWT" --tenant "$TENANT_ID" --allow-no-subscriptions -o none
+          echo "logged in as agent client $AGENT_CLIENT_ID"
+
+      - name: smoke test every API through the gateway
+        run: |
+          scripts/test-api.sh --outputs outputs/outputs.json \
+            --token-cmd 'az account get-access-token --resource "$AUDIENCE" --query accessToken -o tsv' | tee smoke.log
+          { echo '### Smoke tests (dev)'; echo '```'; cat smoke.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: show the APIs now present in the existing gateway
+        env:
+          TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+        run: |
+          # re-login as the API deployer (Reader on the RG) to list APIs
+          JWT=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+                "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)
+          az login --service-principal -u "${{ vars.AZURE_API_CLIENT_ID_DEV }}" --federated-token "$JWT" --tenant "$TENANT_ID" -o none
+          az account set -s "$SUBSCRIPTION_ID"
+          APIM=$(jq -r '.apim_name.value' outputs/outputs.json)
+          { echo "### APIs in \`$APIM\` (shared instance)"; echo '```'; \
+            az apim api list -g rg-cloudapiworkflow -n "$APIM" --query "[].{api:name,path:path,version:apiVersion}" -o table; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  apply-prod:
+    name: prod / terraform
+    needs: smoke-dev
+    if: vars.PROD_ENABLED == 'true'
+    uses: ./.github/workflows/_terraform.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      working_directory: terraform/api-onboarding/prod
+      environment: production
+      client_id: ${{ vars.AZURE_API_CLIENT_ID_PROD }}
+      subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID_PROD }}
+      tenant_id: ${{ vars.AZURE_TENANT_ID }}
+      apply: true
+      guard_shared_apim: true

@@ -1,0 +1,95 @@
+# Platform CI: runs on pull requests that touch the shared platform.
+# Validates, scans and PLANS. Never applies.
+name: platform-ci
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "terraform/platform/**"
+      - "terraform/bootstrap/**"
+      - "terraform/modules/apim/**"
+      - "terraform/modules/networking/**"
+      - "terraform/modules/key-vault/**"
+      - "terraform/modules/monitoring/**"
+      - ".github/workflows/terraform-platform-ci.yml"
+      - ".github/workflows/_terraform.yml"
+      - ".github/actions/terraform/**"
+
+concurrency:
+  group: platform-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: fmt / validate / scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7"
+          terraform_wrapper: false
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive -diff terraform
+
+      - name: terraform validate (every platform root, no backend)
+        run: |
+          for d in terraform/bootstrap terraform/platform/dev terraform/platform/prod; do
+            echo "== $d"
+            terraform -chdir="$d" init -backend=false -input=false >/dev/null
+            terraform -chdir="$d" validate -no-color
+          done
+
+      - name: environment roots in sync (dev == prod except tfvars/backend)
+        run: |
+          for f in main.tf variables.tf providers.tf outputs.tf; do
+            diff -u "terraform/platform/dev/$f" "terraform/platform/prod/$f" || { echo "::error::terraform/platform/{dev,prod}/$f differ; environments must only differ in terraform.tfvars and backend.tf"; exit 1; }
+          done
+          echo "platform roots in sync"
+
+      - name: trivy IaC misconfiguration scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: terraform
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          trivyignores: .trivyignore
+
+  plan-dev:
+    name: plan dev
+    needs: static
+    uses: ./.github/workflows/_terraform.yml
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    with:
+      working_directory: terraform/platform/dev
+      environment: development
+      client_id: ${{ vars.AZURE_PLATFORM_CLIENT_ID_DEV }}
+      subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+      tenant_id: ${{ vars.AZURE_TENANT_ID }}
+      apply: false
+
+  plan-prod:
+    name: plan prod
+    needs: static
+    if: vars.PROD_ENABLED == 'true'
+    uses: ./.github/workflows/_terraform.yml
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    with:
+      working_directory: terraform/platform/prod
+      environment: production
+      client_id: ${{ vars.AZURE_PLATFORM_CLIENT_ID_PROD }}
+      subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID_PROD }}
+      tenant_id: ${{ vars.AZURE_TENANT_ID }}
+      apply: false

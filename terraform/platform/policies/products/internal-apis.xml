@@ -1,0 +1,19 @@
+<!--
+  Product: internal-apis
+  First-party APIs called by internal services. No subscription key: callers
+  are identified by their Entra token, which each API policy validates.
+-->
+<policies>
+  <inbound>
+    <base />
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>

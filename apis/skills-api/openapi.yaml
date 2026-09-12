@@ -1,0 +1,180 @@
+openapi: 3.0.3
+info:
+  title: Skills API
+  version: 1.0.0
+  description: |
+    Read-only catalogue of technical skills. Exposed through the shared API
+    Management gateway at /skills/v1. Callers present a Microsoft Entra
+    client-credentials token with the Skills.Read application role.
+  contact:
+    name: Skills team
+    email: skills-team@example.com
+tags:
+  - name: skills
+    description: Skills catalogue
+  - name: operations
+    description: Health and diagnostics
+paths:
+  /health:
+    get:
+      tags: [operations]
+      operationId: getHealth
+      summary: Liveness probe
+      description: Anonymous at the gateway; used by deployment smoke tests.
+      security: []
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+                api: skills-api
+                version: v1
+        "503":
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /skills:
+    get:
+      tags: [skills]
+      operationId: listSkills
+      summary: List skills
+      description: List skills.
+      parameters:
+        - name: category
+          in: query
+          description: Filter by category
+          required: false
+          schema:
+            type: string
+            enum: [cloud, data, security, platform]
+      responses:
+        "200":
+          description: Skills matching the filter
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Skill"
+              example:
+                - id: terraform
+                  name: Terraform
+                  category: platform
+                  level: expert
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /skills/{skillId}:
+    get:
+      tags: [skills]
+      operationId: getSkill
+      summary: Get a skill by id
+      description: Get a skill by id.
+      parameters:
+        - name: skillId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-z0-9-]+$"
+      responses:
+        "200":
+          description: The skill
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Skill"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+components:
+  securitySchemes:
+    entraBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Microsoft Entra ID access token (client credentials) for audience api://<tenant>/skills-api-<env>
+  schemas:
+    Health:
+      type: object
+      required: [status, api, version]
+      properties:
+        status:
+          type: string
+        api:
+          type: string
+        version:
+          type: string
+    Skill:
+      type: object
+      required: [id, name, category, level]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+          enum: [cloud, data, security, platform]
+        level:
+          type: string
+          enum: [beginner, intermediate, advanced, expert]
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, correlationId]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            correlationId:
+              type: string
+  responses:
+    Unauthorized:
+      description: Missing or invalid access token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Token lacks a required role
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+security:
+  - entraBearer: []
