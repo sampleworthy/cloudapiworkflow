@@ -1,0 +1,26 @@
+<!--
+  Product: agent-apis
+  APIs exposed to AI agents / automation. Agents retry aggressively, so 429
+  responses always carry Retry-After and a stable JSON body they can parse.
+-->
+<policies>
+  <inbound>
+    <base />
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+    <choose>
+      <when condition="@(context.Response.StatusCode == 429)">
+        <set-header name="Retry-After" exists-action="skip">
+          <value>5</value>
+        </set-header>
+      </when>
+    </choose>
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>

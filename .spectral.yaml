@@ -1,0 +1,134 @@
+# Spectral ruleset for every apis/*/openapi.yaml.
+# Runs in terraform-api-ci; errors block the PR, warnings are advisory.
+extends:
+  - spectral:oas
+
+rules:
+  # ---- baseline from spectral:oas, tightened ---------------------------------
+  oas3-api-servers: off              # servers are the gateway's concern, not the spec's
+  operation-tags: error
+  operation-operationId: error
+  operation-description: warn
+  info-contact: error
+  info-description: error
+  oas3-unused-component: warn
+
+  # ---- platform rules ---------------------------------------------------------
+  caw-openapi-3:
+    description: Only OpenAPI 3.x documents are accepted by the platform.
+    severity: error
+    given: $
+    then:
+      field: openapi
+      function: pattern
+      functionOptions:
+        match: "^3\\.[0-9]+\\.[0-9]+$"
+
+  caw-semver-version:
+    description: info.version must be semantic (major.minor.patch); the major must match api.yaml version.
+    severity: error
+    given: $.info.version
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+
+  caw-no-backend-servers:
+    description: Specs must not point at backend hosts; consumers only ever see the gateway.
+    severity: error
+    given: $.servers[*].url
+    then:
+      function: pattern
+      functionOptions:
+        notMatch: "azurewebsites\\.net|localhost|127\\.0\\.0\\.1"
+
+  caw-health-endpoint:
+    description: Every API exposes GET /health for deployment smoke tests.
+    severity: error
+    given: $.paths
+    then:
+      field: /health
+      function: truthy
+
+  caw-global-security:
+    description: The document declares a default security requirement (Entra bearer) so every operation is protected unless it opts out.
+    severity: error
+    given: $
+    then:
+      field: security
+      function: schema
+      functionOptions:
+        schema:
+          type: array
+          minItems: 1
+
+  caw-health-anonymous:
+    description: GET /health opts out of security explicitly (security: []) so the gateway smoke test can run unauthenticated.
+    severity: error
+    given: $.paths./health.get
+    then:
+      field: security
+      function: schema
+      functionOptions:
+        schema:
+          type: array
+          maxItems: 0
+
+  caw-no-anonymous-operations:
+    description: Only /health may opt out of security.
+    severity: error
+    given: $.paths[?(@property != '/health')][get,post,put,patch,delete].security
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          type: array
+          minItems: 1
+
+  caw-error-responses:
+    description: Secured operations document 401 and 429 so consumers can handle gateway responses.
+    severity: error
+    given: $.paths[?(@property != '/health')][get,post,put,patch,delete].responses
+    then:
+      - field: "401"
+        function: truthy
+      - field: "429"
+        function: truthy
+
+  caw-success-response:
+    description: Every operation defines at least one 2xx response.
+    severity: error
+    given: $.paths[*][get,post,put,patch,delete].responses
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          type: object
+          patternProperties:
+            "^2[0-9][0-9]$": {}
+          minProperties: 1
+          propertyNames:
+            pattern: "^[1-5][0-9][0-9]$|^default$"
+
+  caw-operationid-camel:
+    description: operationId is camelCase (it becomes the APIM operation name).
+    severity: error
+    given: $.paths[*][get,post,put,patch,delete].operationId
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[a-z][A-Za-z0-9]*$"
+
+  caw-bearer-scheme:
+    description: The security scheme is an HTTP bearer JWT (Microsoft Entra ID).
+    severity: error
+    given: $.components.securitySchemes[*]
+    then:
+      - field: type
+        function: enumeration
+        functionOptions:
+          values: [http]
+      - field: scheme
+        function: enumeration
+        functionOptions:
+          values: [bearer]

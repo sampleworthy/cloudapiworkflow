@@ -1,0 +1,21 @@
+<!--
+  Product: partner-apis
+  External partners. Subscription key required (product setting) in addition
+  to the Entra token, plus a per-key daily quota so a compromised partner
+  credential has a bounded blast radius.
+-->
+<policies>
+  <inbound>
+    <base />
+    <quota-by-key calls="10000" renewal-period="86400" counter-key="@(context.Subscription?.Key ?? context.Request.IpAddress)" />
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>

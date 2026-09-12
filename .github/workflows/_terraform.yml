@@ -1,0 +1,125 @@
+# Reusable Terraform workflow. Two shapes:
+#   apply=false  -> "plan" job: no GitHub environment, OIDC subject is
+#                   repo:<owner>/<repo>:pull_request; posts the plan on the PR.
+#   apply=true   -> "deploy" job inside the named GitHub environment, whose
+#                   protection rules (reviewers for production) gate it and
+#                   whose name is the only OIDC subject Entra will accept for
+#                   that environment's deployer identity.
+name: _terraform
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        type: string
+        required: true
+      environment:
+        description: GitHub environment for deploy jobs (development | production)
+        type: string
+        default: development
+      client_id:
+        description: Client id of the deployer identity (workload identity federation)
+        type: string
+        required: true
+      subscription_id:
+        type: string
+        required: true
+      tenant_id:
+        type: string
+        required: true
+      apply:
+        type: boolean
+        default: false
+      guard_shared_apim:
+        type: boolean
+        default: false
+      adopt_resource_group:
+        type: boolean
+        default: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ inputs.client_id }}
+  ARM_TENANT_ID: ${{ inputs.tenant_id }}
+  ARM_SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
+  TF_VAR_subscription_id: ${{ inputs.subscription_id }}
+
+jobs:
+  plan:
+    if: ${{ !inputs.apply }}
+    name: plan (${{ inputs.working_directory }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: tf
+        uses: ./.github/actions/terraform
+        with:
+          working_directory: ${{ inputs.working_directory }}
+          apply: "false"
+          guard_shared_apim: ${{ inputs.guard_shared_apim }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plan-${{ inputs.environment }}
+          path: |
+            ${{ inputs.working_directory }}/plan.txt
+            ${{ inputs.working_directory }}/plan.json
+          retention-days: 14
+
+      - name: comment plan on pull request
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          WORKDIR: ${{ inputs.working_directory }}
+          SUMMARY: ${{ steps.tf.outputs.summary }}
+        with:
+          script: |
+            const fs = require('fs');
+            const dir = process.env.WORKDIR;
+            const marker = `<!-- tf-plan:${dir} -->`;
+            let plan = fs.readFileSync(`${dir}/plan.txt`, 'utf8');
+            if (plan.length > 60000) plan = plan.slice(0, 60000) + '\n... (truncated, full plan in workflow artifact)';
+            const body = `${marker}\n#### Terraform plan: \`${dir}\`\n**${process.env.SUMMARY}**\n\n<details><summary>Show plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n</details>\n\n_Apply happens only after merge to \`main\`, from the deployment workflow._`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+            const existing = comments.data.find(c => c.body && c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+  deploy:
+    if: ${{ inputs.apply }}
+    name: apply (${{ inputs.working_directory }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: tf-${{ inputs.working_directory }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/terraform
+        with:
+          working_directory: ${{ inputs.working_directory }}
+          apply: "true"
+          guard_shared_apim: ${{ inputs.guard_shared_apim }}
+          adopt_resource_group: ${{ inputs.adopt_resource_group }}
+          subscription_id: ${{ inputs.subscription_id }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: outputs-${{ inputs.environment }}
+          path: ${{ inputs.working_directory }}/outputs.json
+          retention-days: 7

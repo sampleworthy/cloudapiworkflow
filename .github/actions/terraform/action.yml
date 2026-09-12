@@ -1,0 +1,105 @@
+name: terraform-run
+description: >
+  init / validate / plan (and optionally apply) one Terraform root with GitHub
+  OIDC. Shared by every Terraform workflow so plan and apply behave identically.
+  Authentication comes from ARM_* environment variables set by the caller.
+
+inputs:
+  working_directory:
+    description: Terraform root, e.g. terraform/api-onboarding/dev
+    required: true
+  terraform_version:
+    description: Pinned Terraform version (matches .terraform-version)
+    default: "1.5.7"
+  apply:
+    description: "true to apply the plan produced in this run"
+    default: "false"
+  guard_shared_apim:
+    description: "true to fail if the plan changes azurerm_api_management (API onboarding must never touch the gateway)"
+    default: "false"
+  adopt_resource_group:
+    description: "true to import rg-cloudapiworkflow on first platform run"
+    default: "false"
+  subscription_id:
+    description: Subscription id (for the resource group import only)
+    default: ""
+
+outputs:
+  summary:
+    description: Plan summary line
+    value: ${{ steps.plan.outputs.summary }}
+  has_changes:
+    description: "true when the plan is not a no-op"
+    value: ${{ steps.plan.outputs.has_changes }}
+
+runs:
+  using: composite
+  steps:
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform_version }}
+        terraform_wrapper: false
+
+    - name: terraform init
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: terraform init -input=false -no-color -lockfile=readonly
+
+    - name: terraform validate
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: terraform validate -no-color
+
+    - name: adopt resource group (first platform run only)
+      if: inputs.adopt_resource_group == 'true'
+      shell: bash
+      run: scripts/adopt-resource-group.sh "${{ inputs.working_directory }}" "${{ inputs.subscription_id }}"
+
+    - name: terraform plan
+      id: plan
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        set -o pipefail
+        terraform plan -input=false -no-color -lock-timeout=5m -out=tfplan 2>&1 | tee plan.log
+        terraform show -no-color tfplan > plan.txt
+        terraform show -json tfplan > plan.json
+        summary=$(grep -E '^(Plan:|No changes\.)' plan.log | tail -1 || echo "Plan: see log")
+        echo "summary=$summary" >> "$GITHUB_OUTPUT"
+        if grep -q '^No changes\.' plan.log; then echo "has_changes=false" >> "$GITHUB_OUTPUT"; else echo "has_changes=true" >> "$GITHUB_OUTPUT"; fi
+        {
+          echo "### \`${{ inputs.working_directory }}\`"
+          echo
+          echo "**$summary**"
+          echo
+          echo '<details><summary>plan</summary>'
+          echo
+          echo '```hcl'
+          head -c 60000 plan.txt
+          echo '```'
+          echo '</details>'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: guard - the shared APIM instance must not change
+      if: inputs.guard_shared_apim == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        touched=$(jq -r '[.resource_changes[]? | select(.type == "azurerm_api_management") | select(.change.actions != ["no-op"]) | "\(.address) \(.change.actions | join(","))"] | .[]' plan.json)
+        if [ -n "$touched" ]; then
+          echo "::error::This plan would change the shared API Management instance. API onboarding must never do that:"
+          echo "$touched"
+          exit 1
+        fi
+        destroys=$(jq '[.resource_changes[]? | select(.change.actions | index("delete"))] | length' plan.json)
+        echo "shared APIM untouched; resources to destroy in this plan: $destroys"
+        if [ "$destroys" != "0" ]; then echo "::warning::plan destroys $destroys resource(s); review carefully"; fi
+
+    - name: terraform apply
+      if: inputs.apply == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        terraform apply -input=false -no-color -lock-timeout=5m tfplan
+        terraform output -json > outputs.json
+        echo "applied: ${{ steps.plan.outputs.summary }}" >> "$GITHUB_STEP_SUMMARY"

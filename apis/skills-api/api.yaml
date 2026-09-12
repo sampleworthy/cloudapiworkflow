@@ -1,0 +1,36 @@
+# API metadata. This file IS the registration: terraform/api-onboarding reads
+# every apis/*/api.yaml with yamldecode() and instantiates the apim-api module.
+# Validated in CI against schemas/api.schema.json.
+name: skills-api
+displayName: Skills API
+description: Read-only catalogue of technical skills and the engineers who hold them.
+owner: skills-team
+path: skills
+version: v1
+revision: 1
+product: internal-apis
+subscriptionRequired: false
+
+backend:
+  # The platform hosts this backend on the shared App Service Plan and locks
+  # it to the APIM managed identity. Code ships from applications/skills-api.
+  type: app_service
+
+authentication:
+  type: entra
+  # Token audience becomes api://<tenant-id>/skills-api-<env>
+  audience: skills-api
+  roles:
+    Skills.Read: Read the skills catalogue
+  requiredRoles:
+    - Skills.Read
+  allowedClients:
+    - agent
+
+rateLimit:
+  calls: 100
+  renewalPeriod: 60
+
+diagnostics:
+  enabled: true
+  samplingPercentage: 100
