@@ -1,0 +1,8 @@
+{
+  "properties": {
+    "displayName": "Agent APIs",
+    "description": "APIs consumed by AI agents and automation via client credentials. Adds Retry-After on 429.",
+    "subscriptionRequired": false,
+    "state": "published"
+  }
+}

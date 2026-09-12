@@ -1,0 +1,67 @@
+# Platform CI: validates, scans and PLANS Terraform on pull requests. Never applies.
+name: terraform-ci
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["terraform/**", ".github/workflows/terraform-ci.yml", ".github/workflows/_terraform.yml", ".github/actions/terraform/**"]
+
+concurrency: { group: "terraform-ci-${{ github.event.pull_request.number }}", cancel-in-progress: true }
+permissions: { contents: read }
+
+jobs:
+  static:
+    name: fmt / validate / scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.16.2", terraform_wrapper: false }
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive -diff terraform
+      - name: terraform validate (every root, no backend)
+        run: |
+          for d in terraform/bootstrap terraform/environments/dev terraform/environments/prod; do
+            echo "== $d"; terraform -chdir="$d" init -backend=false -input=false >/dev/null; terraform -chdir="$d" validate -no-color
+          done
+      - name: environment roots in sync (dev == prod except tfvars/backend)
+        run: |
+          for f in main.tf variables.tf providers.tf outputs.tf; do
+            diff -u "terraform/environments/dev/$f" "terraform/environments/prod/$f" || { echo "::error::environments differ in $f; only terraform.tfvars and backend.tf may differ"; exit 1; }
+          done
+      - name: trivy IaC misconfiguration scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with: { scan-type: config, scan-ref: terraform, severity: "HIGH,CRITICAL", exit-code: "1", trivyignores: .trivyignore }
+      - name: gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: "${{ github.token }}" }
+
+  plan-dev:
+    name: plan dev
+    needs: static
+    uses: ./.github/workflows/_terraform.yml
+    permissions: { contents: read, id-token: write, pull-requests: write }
+    with:
+      working_directory: terraform/environments/dev
+      environment: development
+      env_suffix: DEV
+      client_id: ${{ vars.AZURE_PLATFORM_CLIENT_ID_DEV }}
+      subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+      tenant_id: ${{ vars.AZURE_TENANT_ID }}
+      apply: false
+
+  plan-prod:
+    name: plan prod
+    needs: static
+    if: vars.PROD_ENABLED == 'true'
+    uses: ./.github/workflows/_terraform.yml
+    permissions: { contents: read, id-token: write, pull-requests: write }
+    with:
+      working_directory: terraform/environments/prod
+      environment: production
+      env_suffix: PROD
+      client_id: ${{ vars.AZURE_PLATFORM_CLIENT_ID_PROD }}
+      subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID_PROD }}
+      tenant_id: ${{ vars.AZURE_TENANT_ID }}
+      apply: false

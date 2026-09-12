@@ -1,0 +1,52 @@
+# Scheduled drift detection. Report-only: nothing is remediated automatically.
+#   infrastructure drift : terraform plan -detailed-exitcode -> GitHub issue
+#   APIM config drift    : extractor + compare               -> pull request
+name: drift-detection
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # daily 06:17 UTC
+  workflow_dispatch:
+
+permissions: { contents: read }
+
+jobs:
+  infrastructure:
+    name: infrastructure drift (dev)
+    runs-on: ubuntu-latest
+    environment: development
+    permissions: { contents: read, id-token: write, issues: write }
+    env:
+      TF_IN_AUTOMATION: "true"
+      ARM_USE_OIDC: "true"
+      ARM_CLIENT_ID: ${{ vars.AZURE_PLATFORM_CLIENT_ID_DEV }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+      TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tf
+        uses: ./.github/actions/terraform
+        with: { working_directory: terraform/environments/dev, apply: "false", guard_critical: "false" }
+      - name: open or update a drift issue
+        if: steps.tf.outputs.has_changes == 'true'
+        uses: actions/github-script@v7
+        env: { SUMMARY: "${{ steps.tf.outputs.summary }}" }
+        with:
+          script: |
+            const fs = require('fs'); const plan = fs.readFileSync('terraform/environments/dev/plan.txt','utf8').slice(0, 60000);
+            const title = 'Infrastructure drift detected (dev)';
+            const body = `Terraform plan against \`terraform/environments/dev\` is not empty. Someone or something changed the platform outside Git, or a change was merged but not applied.\n\n**${process.env.SUMMARY}**\n\n<details><summary>plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n</details>\n\nDo not remediate blindly: decide whether Git or Azure is right, then either revert the Azure change or land a PR.`;
+            const { owner, repo } = context.repo;
+            const open = await github.rest.issues.listForRepo({ owner, repo, state: 'open', labels: 'drift' });
+            const existing = open.data.find(i => i.title === title);
+            if (existing) await github.rest.issues.update({ owner, repo, issue_number: existing.number, body });
+            else await github.rest.issues.create({ owner, repo, title, body, labels: ['drift'] });
+      - if: steps.tf.outputs.has_changes != 'true'
+        run: echo "no infrastructure drift" >> "$GITHUB_STEP_SUMMARY"
+
+  apim-configuration:
+    name: APIM configuration drift (dev)
+    uses: ./.github/workflows/apiops-extractor.yml
+    permissions: { contents: write, id-token: write, pull-requests: write }
+    with: { environment: dev }

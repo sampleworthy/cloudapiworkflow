@@ -1,41 +1,38 @@
 # CODEOWNERS - who must review what.
 #
-# GitHub resolves these handles to org teams. In an enterprise the org would
-# define the teams below; each line's owners are automatically requested as
-# reviewers and (with the branch ruleset) must approve before merge.
-#
-# Replace "your-org" with the GitHub organisation that hosts this repository.
-# See docs/branch-protection.md for how the teams are expected to be set up.
+# GitHub resolves these handles to org teams; with the branch ruleset they
+# must approve before merge. Replace "your-org" with the organisation that
+# hosts this repository. See docs/branch-protection.md for the team model.
 
-# Default owner for anything not matched below
 *                                   @your-org/platform-team
 
-# Platform infrastructure: APIM instance, networking, monitoring, identity
+# Platform infrastructure (Terraform)
+/terraform/                         @your-org/platform-team
 /terraform/bootstrap/               @your-org/platform-team @your-org/security-team
-/terraform/platform/                @your-org/platform-team
-/terraform/modules/apim/            @your-org/platform-team
 /terraform/modules/networking/      @your-org/platform-team @your-org/network-team
 /terraform/modules/key-vault/       @your-org/platform-team @your-org/security-team
-/terraform/modules/monitoring/      @your-org/platform-team
 /terraform/modules/identity/        @your-org/platform-team @your-org/security-team
 
-# API onboarding: reusable module and the per-environment registrations
-/terraform/modules/apim-api/        @your-org/api-platform-team
-/terraform/api-onboarding/          @your-org/api-platform-team
+# API lifecycle (APIOps artifacts)
+/apim/                              @your-org/api-platform-team
+/apim/artifacts/policy.xml          @your-org/api-platform-team @your-org/security-team
+/apim/artifacts/products/           @your-org/api-platform-team
+/apim/artifacts/named\ values/      @your-org/api-platform-team
+/apim/artifacts/apis/skills-api-v1/ @your-org/skills-team @your-org/api-platform-team
+/apim/artifacts/apis/orders-api-v1/ @your-org/orders-team @your-org/api-platform-team
+/apim/configuration.prod.yaml       @your-org/api-platform-team @your-org/platform-team
 
-# API definitions: the owning API team plus the API platform team
+# API documentation and governance rules
 /apis/                              @your-org/api-platform-team
-/apis/skills-api/                   @your-org/skills-team @your-org/api-platform-team
-/apis/orders-api/                   @your-org/orders-team @your-org/api-platform-team
-/apis/customer-api/                 @your-org/customer-team @your-org/api-platform-team
+/apis/skills-api/                   @your-org/skills-team
+/apis/orders-api/                   @your-org/orders-team
+/governance/                        @your-org/api-platform-team
 
-# Backend application code belongs to the API team that runs it
+# Backend application code
 /applications/skills-api/           @your-org/skills-team
 /applications/orders-api/           @your-org/orders-team
 
-# CI/CD and governance rules
-/.github/workflows/                 @your-org/platform-team
-/.github/pull_request_template.md   @your-org/platform-team
+# CI/CD and repository governance
+/.github/                           @your-org/platform-team
 /CODEOWNERS                         @your-org/platform-team
-/.spectral.yaml                     @your-org/api-platform-team
-/schemas/                           @your-org/api-platform-team
+/scripts/                           @your-org/platform-team @your-org/api-platform-team

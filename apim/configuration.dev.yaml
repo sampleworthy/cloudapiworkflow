@@ -1,0 +1,42 @@
+# APIOps configuration overrides for the dev environment.
+#
+# Published artifacts are identical in every environment; only the values
+# below differ. Placeholders written as {# NAME #} (no spaces) are replaced at publish time by
+# scripts/render-configuration.sh from GitHub repository variables that
+# terraform-deploy writes (NAME_DEV). Nothing here is secret: the App
+# Insights connection string is read by the gateway from Key Vault.
+apimServiceName: "{#APIM_NAME#}"
+
+namedValues:
+  - name: tenant-id
+    properties:
+      displayName: tenant-id
+      value: "{#AZURE_TENANT_ID#}"
+  - name: environment
+    properties:
+      displayName: environment
+      value: "dev"
+  - name: api-audience
+    properties:
+      displayName: api-audience
+      value: "{#API_AUDIENCE#}"
+  - name: appinsights-connection-string
+    properties:
+      displayName: appinsights-connection-string
+      secret: true
+      keyVault:
+        secretIdentifier: "{#APPINSIGHTS_SECRET_ID#}"
+
+loggers:
+  - name: appinsights
+    properties:
+      loggerType: applicationInsights
+      resourceId: "{#APPINSIGHTS_ID#}"
+      credentials:
+        connectionString: "{{appinsights-connection-string}}"
+      isBuffered: true
+
+backends:
+  - name: skills-api
+    properties:
+      url: "{#BACKEND_URL_SKILLS_API#}"

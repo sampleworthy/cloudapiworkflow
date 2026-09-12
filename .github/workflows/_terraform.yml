@@ -1,38 +1,21 @@
-# Reusable Terraform workflow. Two shapes:
-#   apply=false  -> "plan" job: no GitHub environment, OIDC subject is
-#                   repo:<owner>/<repo>:pull_request; posts the plan on the PR.
-#   apply=true   -> "deploy" job inside the named GitHub environment, whose
-#                   protection rules (reviewers for production) gate it and
-#                   whose name is the only OIDC subject Entra will accept for
-#                   that environment's deployer identity.
+# Reusable Terraform workflow.
+#   apply=false -> "plan" job: no GitHub environment, OIDC subject pull_request; posts the plan on the PR.
+#   apply=true  -> "deploy" job inside the named GitHub environment (approval gates live there; the
+#                  environment name is the only OIDC subject Entra accepts for that deployer identity).
+#                  After apply, the root's github_variables output is published as repository
+#                  variables <KEY>_<ENV> so APIOps and test jobs never read Terraform state.
 name: _terraform
 
 on:
   workflow_call:
     inputs:
-      working_directory:
-        type: string
-        required: true
-      environment:
-        description: GitHub environment for deploy jobs (development | production)
-        type: string
-        default: development
-      client_id:
-        description: Client id of the deployer identity (workload identity federation)
-        type: string
-        required: true
-      subscription_id:
-        type: string
-        required: true
-      tenant_id:
-        type: string
-        required: true
-      apply:
-        type: boolean
-        default: false
-      guard_shared_apim:
-        type: boolean
-        default: false
+      working_directory: { type: string, required: true }
+      environment:       { type: string, default: development }
+      env_suffix:        { type: string, default: DEV }
+      client_id:         { type: string, required: true }
+      subscription_id:   { type: string, required: true }
+      tenant_id:         { type: string, required: true }
+      apply:             { type: boolean, default: false }
 
 env:
   TF_IN_AUTOMATION: "true"
@@ -47,20 +30,12 @@ jobs:
     if: ${{ !inputs.apply }}
     name: plan (${{ inputs.working_directory }})
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-      pull-requests: write
+    permissions: { contents: read, id-token: write, pull-requests: write }
     steps:
       - uses: actions/checkout@v4
-
       - id: tf
         uses: ./.github/actions/terraform
-        with:
-          working_directory: ${{ inputs.working_directory }}
-          apply: "false"
-          guard_shared_apim: ${{ inputs.guard_shared_apim }}
-
+        with: { working_directory: "${{ inputs.working_directory }}", apply: "false" }
       - uses: actions/upload-artifact@v4
         with:
           name: plan-${{ inputs.environment }}
@@ -68,53 +43,40 @@ jobs:
             ${{ inputs.working_directory }}/plan.txt
             ${{ inputs.working_directory }}/plan.json
           retention-days: 14
-
       - name: comment plan on pull request
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
-        env:
-          WORKDIR: ${{ inputs.working_directory }}
-          SUMMARY: ${{ steps.tf.outputs.summary }}
+        env: { WORKDIR: "${{ inputs.working_directory }}", SUMMARY: "${{ steps.tf.outputs.summary }}" }
         with:
           script: |
             const fs = require('fs');
-            const dir = process.env.WORKDIR;
-            const marker = `<!-- tf-plan:${dir} -->`;
+            const dir = process.env.WORKDIR, marker = `<!-- tf-plan:${dir} -->`;
             let plan = fs.readFileSync(`${dir}/plan.txt`, 'utf8');
             if (plan.length > 60000) plan = plan.slice(0, 60000) + '\n... (truncated, full plan in workflow artifact)';
-            const body = `${marker}\n#### Terraform plan: \`${dir}\`\n**${process.env.SUMMARY}**\n\n<details><summary>Show plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n</details>\n\n_Apply happens only after merge to \`main\`, from the deployment workflow._`;
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
+            const body = `${marker}\n#### Terraform plan: \`${dir}\`\n**${process.env.SUMMARY}**\n\n<details><summary>Show plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n</details>\n\n_Apply happens only after merge to \`main\`, from terraform-deploy._`;
+            const { owner, repo } = context.repo, issue_number = context.issue.number;
             const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
             const existing = comments.data.find(c => c.body && c.body.startsWith(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number, body });
-            }
+            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number, body });
 
   deploy:
     if: ${{ inputs.apply }}
     name: apply (${{ inputs.working_directory }})
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
-    concurrency:
-      group: tf-${{ inputs.working_directory }}
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      id-token: write
+    concurrency: { group: "tf-${{ inputs.working_directory }}", cancel-in-progress: false }
+    permissions: { contents: read, id-token: write, actions: write }
     steps:
       - uses: actions/checkout@v4
-
       - uses: ./.github/actions/terraform
-        with:
-          working_directory: ${{ inputs.working_directory }}
-          apply: "true"
-          guard_shared_apim: ${{ inputs.guard_shared_apim }}
-
+        with: { working_directory: "${{ inputs.working_directory }}", apply: "true" }
+      - name: publish platform outputs as repository variables (<KEY>_${{ inputs.env_suffix }})
+        env: { GH_TOKEN: "${{ github.token }}", SUFFIX: "${{ inputs.env_suffix }}" }
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          jq -r '.github_variables.value | to_entries[] | "\(.key)=\(.value)"' outputs.json | while IFS='=' read -r k v; do
+            gh variable set "${k}_${SUFFIX}" --repo "$GITHUB_REPOSITORY" --body "$v" && echo "set ${k}_${SUFFIX}"
+          done
       - uses: actions/upload-artifact@v4
-        with:
-          name: outputs-${{ inputs.environment }}
-          path: ${{ inputs.working_directory }}/outputs.json
-          retention-days: 7
+        with: { name: "outputs-${{ inputs.environment }}", path: "${{ inputs.working_directory }}/outputs.json", retention-days: 7 }

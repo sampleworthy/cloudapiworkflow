@@ -1,0 +1,11 @@
+{
+  "properties": {
+    "loggerType": "applicationInsights",
+    "description": "Shared Application Insights logger. Connection string comes from a Key Vault-backed named value; resourceId is overridden per environment.",
+    "credentials": {
+      "connectionString": "{{appinsights-connection-string}}"
+    },
+    "isBuffered": true,
+    "resourceId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-cloudapiworkflow/providers/microsoft.insights/components/appi-cloudapiworkflow"
+  }
+}

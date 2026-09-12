@@ -1,133 +1,193 @@
 # Architecture
 
-## Platform architecture
+Two control planes over one shared API Management instance per environment:
 
-One shared API Management instance per environment, owned by the platform
-layer. Everything an API needs at runtime (identity, logging, network, secrets)
-is shared platform infrastructure; only the API definition itself is per-API.
+* **Terraform** provisions the Azure platform (`rg-cloudapiworkflow` and everything long-lived).
+* **Microsoft APIOps** publishes API configuration from Git into that instance.
+
+The dividing line: if it is an ARM resource outside `Microsoft.ApiManagement/service/<name>/*`, Terraform owns it. If it is a child of the APIM service (APIs, products, policies, named values, loggers, diagnostics, version sets, backends), APIOps owns it.
+
+## 1. Terraform platform provisioning
 
 ```mermaid
 flowchart TB
-    subgraph SUB["Azure subscription"]
-        subgraph STATE["rg-cloudapiworkflow-state (bootstrap)"]
-            ST["Storage account<br/>Terraform state<br/>containers: bootstrap / platform / api-onboarding"]
-            SP1["sp-cloudapiworkflow-platform-{dev,prod}"]
-            SP2["sp-cloudapiworkflow-api-{dev,prod}"]
-        end
-        subgraph RG["rg-cloudapiworkflow (platform)"]
-            APIM["API Management<br/>apim-cloudapiworkflow-&lt;suffix&gt;<br/>system-assigned identity"]
-            PROD["Products<br/>internal-apis / partner-apis / agent-apis"]
-            POL["Global policy + named values"]
-            VNET["VNet vnet-cloudapiworkflow<br/>snet-apim / snet-app-integration / snet-private-endpoints"]
-            DNS["Private DNS zones<br/>privatelink.azurewebsites.net<br/>privatelink.vaultcore.azure.net"]
-            KV["Key Vault<br/>kv-cloudapiworkflow-&lt;suffix&gt;"]
-            LAW["Log Analytics<br/>log-cloudapiworkflow"]
-            AI["Application Insights<br/>appi-cloudapiworkflow"]
-            ASP["App Service Plan<br/>asp-cloudapiworkflow (shared)"]
-            AGENT["Entra app<br/>cloudapiworkflow-agent-client"]
-            subgraph ONB["added by api-onboarding, per API"]
-                API1["skills-api-v1"]
-                API2["orders-api-v1"]
-                API3["customer-api-v1"]
-                WA1["app-skills-api-&lt;suffix&gt;"]
-                WA2["app-orders-api-&lt;suffix&gt;"]
-                ID1["Entra apps + app roles"]
-            end
-        end
-    end
-    APIM --- PROD
-    APIM --- POL
-    APIM -.-> AI
-    AI --- LAW
-    ASP --- WA1
-    ASP --- WA2
-    APIM --> API1 & API2 & API3
-    API1 -->|managed identity| WA1
-    API2 -->|managed identity| WA2
-    WA1 & WA2 -.->|VNet integration| VNET
-    VNET --- DNS
+    GH["GitHub: terraform/**"] -->|PR| CI["terraform-ci<br/>fmt · validate · trivy · gitleaks · plan"]
+    CI -->|merge| DEP["terraform-deploy<br/>(development / production environments)"]
+    DEP -->|OIDC| ENTRA["Microsoft Entra ID<br/>sp-cloudapiworkflow-platform-&lt;env&gt;"]
+    ENTRA -->|RBAC: Contributor + UAA on rg| TF["Terraform 1.16.2"]
+    TF --> RG["rg-cloudapiworkflow"]
+    RG --> APIM["APIM service<br/>apim-cloudapiworkflow-&lt;suffix&gt;<br/>system-assigned identity"]
+    RG --> VNET["VNet · subnets · NSG"]
+    RG --> DNS["Private DNS zones"]
+    RG --> KV["Key Vault<br/>kv-cloudapiworkflow-&lt;suffix&gt;"]
+    RG --> MON["Log Analytics + App Insights"]
+    RG --> ASP["App Service Plan<br/>app-skills-api-&lt;suffix&gt;<br/>app-orders-api-&lt;suffix&gt;"]
+    TF --> ID["Entra: API resource app + app roles<br/>agent / unprivileged demo clients"]
+    DEP -->|writes| VARS["GitHub variables<br/>APIM_NAME_DEV, API_AUDIENCE_DEV, ..."]
 ```
 
-## Two Terraform layers, three states
-
-| Layer | Root | State key | Owns | Changes |
-|---|---|---|---|---|
-| bootstrap | `terraform/bootstrap` | `bootstrap/bootstrap.tfstate` | state storage, resource groups, deployer identities, RBAC | once |
-| platform | `terraform/platform/<env>` | `platform/<env>.tfstate` | APIM, VNet, DNS, Key Vault, monitoring, App Service Plan, products, global policy, agent client | rarely |
-| api-onboarding | `terraform/api-onboarding/<env>` | `api-onboarding/<env>.tfstate` | per API: version set, API, policy, backend, product link, diagnostic, Entra app, web app | every API PR |
-
-The onboarding layer reads the platform through `terraform_remote_state`. The
-platform exports a stable contract (`apim_name`, `apim_id`,
-`apim_resource_group_name`, `apim_logger_id`, `product_ids`,
-`app_service_plan_id`, ...). The onboarding root contains no
-`azurerm_api_management` resource, and CI fails any plan in which the gateway
-would change.
-
-## API onboarding flow
+## 2. Terraform remote state
 
 ```mermaid
-flowchart TD
-    DEV["Developer"] --> F["apis/orders-api/<br/>api.yaml · openapi.yaml · policies/inbound.xml"]
-    F --> PR["Pull request<br/>feature/onboard-orders-api"]
-    PR --> CI["api-ci<br/>schema check · Spectral · policy XML<br/>terraform fmt / validate / plan"]
-    CI --> GUARD{"plan touches<br/>azurerm_api_management?"}
-    GUARD -->|yes| FAIL["fail PR"]
-    GUARD -->|no| REVIEW["CODEOWNERS review<br/>plan posted on PR"]
-    REVIEW --> MERGE["merge to main"]
-    MERGE --> DEPLOY["api-deploy<br/>OIDC → terraform apply<br/>zip-deploy backend<br/>smoke tests"]
-    DEPLOY --> APIM["EXISTING APIM<br/>apim-cloudapiworkflow-&lt;suffix&gt;"]
-    APIM --> E1["skills-api-v1 (existing)"]
-    APIM --> E2["orders-api-v1 (new)"]
+flowchart LR
+    B["terraform/bootstrap<br/>(human, once)"] --> SA["stcawstate4k7m<br/>rg-cloudapiworkflow-state<br/>Entra-only auth · versioning · soft delete"]
+    SA --> C1["container bootstrap<br/>bootstrap.tfstate"]
+    SA --> C2["container platform<br/>dev.tfstate · prod.tfstate"]
+    P1["sp-…-platform-dev"] -->|Blob Data Contributor| C2
+    P2["sp-…-platform-prod"] -->|Blob Data Contributor (prod sub)| C2
+    X["apiops identities"] -.->|no access| SA
 ```
 
-## Runtime security
+There is no API-onboarding state: APIOps keeps no state, Git and APIM are compared directly.
+
+## 3. APIOps lifecycle
+
+```mermaid
+flowchart LR
+    DEV["API developer"] -->|edits apim/artifacts/apis/&lt;api&gt;/| PR["Pull request"]
+    PR --> VAL["api-validation<br/>artifacts · Spectral · oasdiff · policy · gitleaks · deletion guard"]
+    VAL --> REV["CODEOWNERS review"]
+    REV -->|merge to main| PUB["apiops-publisher (dev)"]
+    PUB --> APIM["EXISTING APIM"]
+    APIM --> TEST["post-deployment tests"]
+    TEST -->|api-promote, production reviewers| PROD["EXISTING APIM (prod)"]
+    APIM -.->|extractor| DRIFT["drift PR"]
+```
+
+## 4. Extractor
+
+```mermaid
+sequenceDiagram
+    participant S as schedule / operator
+    participant W as apiops-extractor workflow
+    participant E as Entra (sp-…-apiops-extractor)
+    participant A as APIM (dev)
+    participant G as GitHub
+    S->>W: dispatch or daily schedule
+    W->>E: OIDC (subject ref:refs/heads/main)
+    E-->>W: token (API Management Service Reader)
+    W->>A: extractor reads apis, products, policies, named values, loggers, diagnostics, backends, version sets
+    W->>W: expected = artifacts ⊕ configuration.dev.yaml<br/>compare with extracted (scripts/apim-drift.py)
+    alt no drift
+        W-->>G: job summary "no drift"
+    else drift
+        W->>G: branch apiops/extract-dev + PR labelled apim-drift (never commits to main)
+    end
+```
+
+## 5. Publisher
+
+```mermaid
+sequenceDiagram
+    participant M as main (merge)
+    participant W as apiops-publisher
+    participant E as Entra (sp-…-apiops-publisher)
+    participant A as APIM (dev)
+    M->>W: push touching apim/**
+    W->>W: retirement guard (deleted APIs need label api-retirement)
+    W->>E: OIDC (subject environment:development)
+    E-->>W: token (API Management Service Contributor)
+    W->>W: render configuration.dev.yaml from GitHub variables
+    W->>A: publisher COMMIT_ID=&lt;sha&gt; (changed artifacts only, deletes honoured)
+    W->>A: verify path / version / revision
+    W->>A: health · 401 · 401 · 403 · 200 · 429 · backend 401
+```
+
+## 6. GitHub CI/CD
+
+| workflow | trigger | identity | does |
+|---|---|---|---|
+| `terraform-ci` | PR on `terraform/**` | platform (pull_request) | fmt, validate, roots-in-sync, Trivy, gitleaks, plan + comment, critical-resource guard |
+| `terraform-deploy` | push `main` on `terraform/**` | platform (environment) | apply dev, publish outputs as variables, apply prod (gated) |
+| `api-validation` | every PR | none | artifacts, Spectral, oasdiff, policy, gitleaks, deletion guard |
+| `apiops-publisher` | push `main` on `apim/**` | apiops-publisher + demo clients | publish dev, verify, tests |
+| `api-promote` | dispatch (sha) | apiops-publisher-prod | publish the same sha to prod behind reviewers |
+| `apiops-extractor` | dispatch / called | apiops-extractor | extract, compare, PR |
+| `drift-detection` | daily | platform + extractor | plan → issue, extract → PR |
+| `application-deploy` | push `main` on `applications/**` | platform | pytest, zip deploy, gateway health |
+
+## 7. Runtime authentication
 
 ```mermaid
 sequenceDiagram
     participant C as Client / AI agent
     participant E as Microsoft Entra ID
-    participant G as APIM (shared gateway)
+    participant G as APIM
     participant B as Backend (App Service, Easy Auth)
-
-    C->>E: client_credentials<br/>scope api://tenant/orders-api-dev/.default
-    E-->>C: JWT (aud = api://tenant/orders-api-dev, roles = [Orders.Read])
-    C->>G: GET /orders/v1/orders<br/>Authorization: Bearer JWT
+    C->>E: client_credentials, scope api://tenant/cloudapiworkflow-dev/.default
+    E-->>C: JWT (aud = api://tenant/cloudapiworkflow-dev, roles = [Orders.Read])
+    C->>G: GET /orders/v1/orders + Bearer
     Note over G: global policy: correlation id, header hygiene
-    Note over G: API policy: validate-jwt (issuer, audience, roles)<br/>rate-limit-by-key (per caller)
-    G->>E: token for api://tenant/orders-api-dev<br/>as APIM managed identity
-    E-->>G: JWT (appid = APIM identity)
-    G->>B: forward + Bearer (APIM identity token)<br/>X-Correlation-Id
-    Note over B: Easy Auth: token must be for this app<br/>and from an allowed client (APIM only)
+    Note over G: API policy: validate-jwt (issuer, audience) → 401<br/>roles check → 403 · rate-limit-by-key → 429
+    G->>E: token for api://tenant/cloudapiworkflow-dev as APIM managed identity
+    G->>B: forward + Bearer (APIM identity) + X-Correlation-Id
+    Note over B: Easy Auth: token for this app, client = APIM identity only
     B-->>G: 200
     G-->>C: 200 + security headers + X-Correlation-Id
-    C--xB: direct call to *.azurewebsites.net → 401
 ```
 
-Detail in [security.md](security.md).
+## 8. Private backend networking
+
+```mermaid
+flowchart LR
+    I["Internet consumer"] -->|OAuth token| APIM
+    I -. "direct call → 401 (dev)<br/>no route (prod)" .-> B
+    subgraph VNET["vnet-cloudapiworkflow"]
+        SA["snet-apim<br/>(StandardV2 outbound integration, prod)"]
+        SI["snet-app-integration<br/>NSG: deny Internet inbound"]
+        SP["snet-private-endpoints<br/>(prod)"]
+    end
+    APIM -->|managed identity token| B["app-orders-api-&lt;suffix&gt;<br/>Easy Auth allow-list = APIM identity"]
+    APIM -.-> SA
+    B --- SI
+    B -.->|private endpoint + privatelink.azurewebsites.net| SP
+    KV["Key Vault"] -.->|private endpoint (prod)| SP
+```
+
+Dev proves "cannot bypass APIM" with identity (works on Consumption). Prod adds the network layer with the same code and different tfvars.
+
+## 9. Environment promotion
+
+```mermaid
+flowchart LR
+    SHA["commit on main"] --> D["apiops-publisher → dev"]
+    D --> T["post-deployment tests"]
+    T -->|"api-promote (sha)"| PRE["precheck: dev run succeeded for sha"]
+    PRE --> APR["production environment: required reviewers"]
+    APR --> P["publisher → prod<br/>configuration.prod.yaml"]
+```
+
+The unit of promotion is a commit SHA of `apim/artifacts`; nothing is re-authored per environment.
+
+## 10. API onboarding lifecycle
+
+```mermaid
+flowchart TD
+    A["feature/onboard-orders-api"] --> F["apim/artifacts/apis/orders-api-v1/<br/>version set · backend · product link<br/>configuration.*.yaml backend URL<br/>apis/orders-api/README.md"]
+    F --> PR["PR"] --> V["api-validation"] --> R["review"] --> M["merge"]
+    M --> P["apiops-publisher"] --> X["EXISTING apim-cloudapiworkflow-&lt;suffix&gt;<br/>├── skills-api-v1<br/>└── orders-api-v1 (new)"]
+    X --> S["smoke · auth matrix · rate limit · backend protection"]
+    S --> O["App Insights: requests visible by API name"]
+```
 
 ## Policy hierarchy
 
 ```
-global   (terraform/platform/policies/global.xml)      platform team
-  └─ product (terraform/platform/policies/products/*)  platform team
-       └─ API (apis/<name>/policies/inbound.xml)       API team, rendered by Terraform
-            └─ operation                                (not used; method checks live in the API policy)
+apim/artifacts/policy.xml                         global   (platform team)
+  └─ products/<product>/policy.xml               product  (API platform team)
+       └─ apis/<api>/policy.xml                  API      (API team + API platform team)
+            └─ apis/<api>/operations/<op>/policy.xml   operation (optional)
 ```
 
-Every API policy begins with `<base />`, so correlation ids, security headers
-and the error shape are inherited, never copied. API policies carry only what
-differs per API: audience, roles, rate limit, backend routing, mocking.
+Every level begins with `<base />`; API policies carry only what differs per API.
 
 ## Naming
 
-| Resource | Name |
+| resource | name |
 |---|---|
-| Resource group | `rg-cloudapiworkflow` (fixed) |
+| resource group | `rg-cloudapiworkflow` (fixed) |
 | APIM | `apim-cloudapiworkflow-<suffix>` |
 | Key Vault | `kv-cloudapiworkflow-<suffix>` |
-| Web app | `app-<api-name>-<suffix>` |
-| Entra resource app | `<Display name> (<env>)`, identifier URI `api://<tenant-id>/<api-name>-<env>` |
-| APIM API | `<api-name>-<version>` at `/<path>/<version>` |
-
-`<suffix>` is a 4-character `random_string` created once by the platform layer
-and exported so the onboarding layer names web apps consistently.
+| backend web app | `app-<api-name>-<suffix>` (tag `api=<api-name>`) |
+| Entra resource app | `Cloud API Workflow APIs (<env>)`, identifier URI `api://<tenant-id>/cloudapiworkflow-<env>` |
+| APIM API id | `<api-name>-v<n>` at `/<path>/v<n>`; revisions `<api-name>-v<n>;rev=<r>` |

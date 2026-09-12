@@ -1,0 +1,51 @@
+# API validation: runs on every pull request so it can be a required status
+# check. Validates the APIOps tree (schema/consistency), OpenAPI (Spectral),
+# breaking changes (oasdiff), policies, secrets, and guards API deletion.
+name: api-validation
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency: { group: "api-validation-${{ github.event.pull_request.number }}", cancel-in-progress: true }
+permissions: { contents: read, pull-requests: read }
+
+jobs:
+  validate:
+    name: api definitions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install --quiet pyyaml
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+
+      - name: APIOps artifact consistency
+        run: scripts/validate-artifacts.sh
+      - name: OpenAPI governance (Spectral, governance/.spectral.yaml)
+        run: scripts/validate-openapi.sh
+      - name: breaking-change detection (oasdiff vs main)
+        run: scripts/detect-breaking-changes.sh origin/${{ github.base_ref }}
+      - name: policy validation
+        run: scripts/validate-policy.sh
+      - name: gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: "${{ github.token }}" }
+
+      - name: API deletion requires the api-retirement label
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          deleted=$(git diff --name-only --diff-filter=D origin/${{ github.base_ref }}...HEAD -- 'apim/artifacts/apis/*/apiInformation.json' || true)
+          [ -z "$deleted" ] && { echo "no API deletions"; exit 0; }
+          echo "this PR deletes: $deleted"
+          if gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -qx api-retirement; then
+            echo "retirement label present"; else echo "::error::API deletion requires the api-retirement label and a completed deprecation period (docs/api-onboarding.md#retirement)"; exit 1; fi
+
+      - name: no APIM instance defined outside the platform module
+        run: |
+          if grep -rEn 'resource\s+"azurerm_api_management"\s' terraform --include='*.tf' | grep -v 'terraform/modules/apim/'; then
+            echo "::error::azurerm_api_management may only exist in terraform/modules/apim"; exit 1; fi
+          echo ok
