@@ -1,9 +1,10 @@
 # Architecture
 
-Two control planes over one shared API Management instance per environment:
+Three lifecycles over one shared API Management instance per environment:
 
-* **Terraform** provisions the Azure platform (`rg-cloudapiworkflow` and everything long-lived).
-* **Microsoft APIOps** publishes API configuration from Git into that instance.
+* **Terraform** provisions the Azure platform (`rg-cloudapiworkflow` and everything long-lived, including the Microsoft Foundry resource, project and model deployment).
+* **Microsoft APIOps** publishes API configuration from Git into that instance, including the AI gateway artifacts (model API, policy fragments).
+* **Foundry CI/CD** deploys agent definitions from Git into the Foundry project; agents consume APIs through the gateway. See [agentic-architecture.md](agentic-architecture.md) for the combined diagram and [ai-gateway.md](ai-gateway.md) for what the gateway governs per workload type.
 
 The dividing line: if it is an ARM resource outside `Microsoft.ApiManagement/service/<name>/*`, Terraform owns it. If it is a child of the APIM service (APIs, products, policies, named values, loggers, diagnostics, version sets, backends), APIOps owns it.
 

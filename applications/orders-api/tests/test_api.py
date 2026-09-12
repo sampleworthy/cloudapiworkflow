@@ -26,3 +26,9 @@ def test_create_order_requires_items(client):
 
 def test_get_order_not_found(client):
     assert client.get("/orders/ord-999999").status_code == 404
+
+
+def test_demo_order_1024_exists(client):
+    r = client.get("/orders/ord-1024")
+    assert r.status_code == 200
+    assert r.json()["status"] == "shipped"

@@ -1,0 +1,11 @@
+{
+  "properties": {
+    "protocol": "http",
+    "url": "https://aif-placeholder.openai.azure.com/openai",
+    "description": "Microsoft Foundry model deployments (OpenAI-compatible surface). URL overridden per environment; APIM authenticates with its managed identity.",
+    "tls": {
+      "validateCertificateChain": true,
+      "validateCertificateName": true
+    }
+  }
+}

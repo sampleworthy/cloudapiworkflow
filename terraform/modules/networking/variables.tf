@@ -43,6 +43,9 @@ variable "private_dns_zones" {
   default = [
     "privatelink.azurewebsites.net",
     "privatelink.vaultcore.azure.net",
+    "privatelink.cognitiveservices.azure.com",
+    "privatelink.openai.azure.com",
+    "privatelink.services.ai.azure.com",
   ]
 }
 

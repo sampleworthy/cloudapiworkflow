@@ -20,6 +20,10 @@ namedValues:
     properties:
       displayName: api-audience
       value: "{#API_AUDIENCE#}"
+  - name: model-deployment
+    properties:
+      displayName: model-deployment
+      value: "{#FOUNDRY_MODEL_DEPLOYMENT#}"
   - name: appinsights-connection-string
     properties:
       displayName: appinsights-connection-string
@@ -40,6 +44,9 @@ backends:
   - name: skills-api
     properties:
       url: "{#BACKEND_URL_SKILLS_API#}"
+  - name: foundry-models
+    properties:
+      url: "{#FOUNDRY_OPENAI_ENDPOINT#}/openai"
 
 # Lower sampling in production to control ingestion cost.
 diagnostics:

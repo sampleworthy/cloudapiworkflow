@@ -84,6 +84,31 @@ variable "demo_clients" {
   }
 }
 
+# --- Foundry / agents ------------------------------------------------------------
+
+variable "foundry_model" {
+  description = "Single model deployment for the demo (multi-model routing is an APIM backend-pool concern)."
+  type = object({
+    deployment_name = optional(string, "gpt-4.1-mini")
+    name            = optional(string, "gpt-4.1-mini")
+    version         = optional(string, "2025-04-14")
+    sku             = optional(string, "GlobalStandard")
+    capacity        = optional(number, 10)
+  })
+  default = {}
+}
+
+variable "agent_app_roles" {
+  description = "App roles granted to the Foundry project identity (what agents may call through APIM). Read-only by design."
+  type        = list(string)
+  default     = ["Skills.Read", "Orders.Read"]
+}
+
+variable "agent_deployer_display_name" {
+  description = "Display name of the agent-deployer service principal created by bootstrap."
+  type        = string
+}
+
 # --- Backends, vault, logs ----------------------------------------------------
 
 variable "backend_apps" {

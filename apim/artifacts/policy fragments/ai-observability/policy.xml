@@ -1,0 +1,13 @@
+<!--
+  Policy fragment: AI observability (include in the inbound section of any
+  model API). Emits prompt / completion / total token counts as Application
+  Insights custom metrics, dimensioned by API and caller, so cost per team or
+  per agent is a query, not a guess. llm-emit-token-metric: GA.
+-->
+<fragment>
+  <llm-emit-token-metric namespace="cloudapiworkflow.ai">
+    <dimension name="API ID" />
+    <dimension name="Operation ID" />
+    <dimension name="Caller" value="@(context.Variables.GetValueOrDefault<string>("callerId", "anonymous"))" />
+  </llm-emit-token-metric>
+</fragment>

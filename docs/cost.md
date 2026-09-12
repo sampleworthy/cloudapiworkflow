@@ -30,8 +30,10 @@ from the SKU; resource logs only where supported) and in policies
 | Key Vault | standard | < $1 |
 | Private DNS zones (2), VNet, NSG | | ~$1 |
 | State storage | Standard LRS | < $1 |
+| Microsoft Foundry resource + project | S0, basic agent setup (Microsoft-managed storage) | $0 idle |
+| Model deployment `gpt-4.1-mini` (GlobalStandard, 10K TPM) | pay per token; CI tests only | < $1 |
 | GitHub Actions | public repo | $0 |
-| **total** | | **~$15-20** |
+| **total** | | **~$16-22** |
 
 APIOps itself costs nothing: two binaries downloaded at run time.
 
@@ -44,11 +46,14 @@ APIOps itself costs nothing: two binaries downloaded at run time.
 | Private endpoints | 1 per backend + Key Vault | ~$7 each |
 | Log Analytics | no cap, 90-day retention | usage-based |
 | Front Door + WAF (enterprise) | Standard/Premium | ~$35 + usage / ~$330 + usage |
+| Foundry private endpoint + standard agent setup (Cosmos DB, Storage, AI Search) | | ~$7 + ~$100+ |
+| Model capacity (PTU) if latency SLAs require it | per PTU-hour | usage-based |
 | **total** | | **~$900+** |
 
 ## Cost controls built in
 
 * One App Service Plan for all backends; an API adds a web app, never a plan
 * Log Analytics daily cap in dev; per-API diagnostic sampling; prod global sampling 20 %
-* Consumption APIM idles at $0
+* Consumption APIM idles at $0; Foundry and the model deployment idle at $0
+* `llm-token-limit` daily quotas bound model spend per caller
 * Tear-down order: `terraform destroy` in `environments/dev` (remove `prevent_destroy` first), then bootstrap

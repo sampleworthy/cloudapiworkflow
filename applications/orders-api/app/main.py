@@ -52,15 +52,14 @@ ORDERS: dict[str, Order] = {}
 
 
 def _seed() -> None:
-    o = Order(
-        id=f"ord-{next(_ids)}",
-        customerId="cust-42",
-        status="confirmed",
-        total=129.99,
-        currency="USD",
-        items=[OrderItem(sku="SKU-1", quantity=1, unitPrice=129.99)],
-    )
-    ORDERS[o.id] = o
+    """Seed data. ord-1024 is the order the API Platform Assistant demo asks for."""
+    for oid, customer, status, sku, price in (
+        ("ord-1001", "cust-42", "confirmed", "SKU-1", 129.99),
+        ("ord-1024", "cust-7", "shipped", "SKU-APIM-PRO", 499.00),
+    ):
+        ORDERS[oid] = Order(id=oid, customerId=customer, status=status, total=price, currency="USD",
+                            items=[OrderItem(sku=sku, quantity=1, unitPrice=price)])
+    for _ in range(24): next(_ids)  # keep generated ids above the seeded ones
 
 
 _seed()

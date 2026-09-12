@@ -9,6 +9,7 @@
 #        platform          Terraform deployer (Contributor on the group)
 #        apiops-publisher  writes API artifacts into the existing APIM instance
 #        apiops-extractor  reads APIM configuration for drift / sync PRs
+#        agent-deployer    deploys and tests agents in the Foundry project
 # ---------------------------------------------------------------------------
 
 data "azurerm_client_config" "current" {}
@@ -28,7 +29,7 @@ locals {
     }
   }
 
-  roles = ["platform", "apiops-publisher", "apiops-extractor"]
+  roles = ["platform", "apiops-publisher", "apiops-extractor", "agent-deployer"]
 
   deployers = merge([
     for env, cfg in local.environments : {
@@ -177,6 +178,7 @@ locals {
     platform         = ["Contributor", "User Access Administrator"]
     apiops-publisher = ["Reader", "API Management Service Contributor"]
     apiops-extractor = ["Reader", "API Management Service Reader Role"]
+    agent-deployer   = ["Reader"] # Azure AI Developer on the Foundry project is granted by the platform layer once the project exists
   }
 
   azure_role_assignments = {
@@ -226,6 +228,7 @@ locals {
     ]
     apiops-publisher = []
     apiops-extractor = []
+    agent-deployer   = []
   }
 
   graph_role_assignments = {

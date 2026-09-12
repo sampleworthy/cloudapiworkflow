@@ -28,6 +28,14 @@
 /apis/orders-api/                   @your-org/orders-team
 /governance/                        @your-org/api-platform-team
 
+# Agents (Foundry CI/CD) and the AI gateway map
+/agents/                            @your-org/ai-platform-team
+/agents/api-platform-assistant/     @your-org/ai-platform-team @your-org/api-platform-team
+/scripts/agent/                     @your-org/platform-team @your-org/ai-platform-team
+/ai-gateway/                        @your-org/api-platform-team @your-org/platform-team
+/apim/artifacts/apis/foundry-models-v1/  @your-org/platform-team @your-org/api-platform-team
+/apim/artifacts/policy\ fragments/  @your-org/platform-team @your-org/security-team
+
 # Backend application code
 /applications/skills-api/           @your-org/skills-team
 /applications/orders-api/           @your-org/orders-team
