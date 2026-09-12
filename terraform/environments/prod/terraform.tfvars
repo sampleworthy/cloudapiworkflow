@@ -3,11 +3,13 @@
 #   * private endpoints for Key Vault and every backend, public access off
 #   * purge protection on, longer retention, no ingestion cap
 # subscription_id comes from TF_VAR_subscription_id (the prod subscription).
-environment         = "prod"
-location            = "eastus2"
-resource_group_name = "rg-cloudapiworkflow"
-name_prefix         = "cloudapiworkflow"
-github_repository   = "sampleworthy/cloudapiworkflow"
+environment          = "prod"
+location             = "eastus2"
+resource_group_name  = "rg-cloudapiworkflow"
+name_prefix          = "cloudapiworkflow"
+github_repository    = "sampleworthy/cloudapiworkflow"
+github_owner_id      = 86179207
+github_repository_id = 1367640405
 
 apim_sku_name         = "StandardV2_1"
 apim_publisher_name   = "Cloud API Workflow Platform Team"

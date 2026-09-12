@@ -31,7 +31,7 @@ jobs:
             diff -u "terraform/environments/dev/$f" "terraform/environments/prod/$f" || { echo "::error::environments differ in $f; only terraform.tfvars and backend.tf may differ"; exit 1; }
           done
       - name: trivy IaC misconfiguration scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with: { scan-type: config, scan-ref: terraform, severity: "HIGH,CRITICAL", exit-code: "1", trivyignores: .trivyignore }
       - name: gitleaks secret scan
         uses: gitleaks/gitleaks-action@v2
@@ -41,7 +41,7 @@ jobs:
     name: plan dev
     needs: static
     uses: ./.github/workflows/_terraform.yml
-    permissions: { contents: read, id-token: write, pull-requests: write }
+    permissions: { contents: read, id-token: write, pull-requests: write, actions: write }
     with:
       working_directory: terraform/environments/dev
       environment: development
@@ -56,7 +56,7 @@ jobs:
     needs: static
     if: vars.PROD_ENABLED == 'true'
     uses: ./.github/workflows/_terraform.yml
-    permissions: { contents: read, id-token: write, pull-requests: write }
+    permissions: { contents: read, id-token: write, pull-requests: write, actions: write }
     with:
       working_directory: terraform/environments/prod
       environment: production

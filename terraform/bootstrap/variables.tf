@@ -19,6 +19,16 @@ variable "github_repository" {
   }
 }
 
+variable "github_owner_id" {
+  description = "Numeric id of the GitHub owner (gh api users/<owner> --jq .id). GitHub's immutable OIDC subjects are repo:<owner>@<owner_id>/<repo>@<repo_id>:<context>, which survive renames."
+  type        = number
+}
+
+variable "github_repository_id" {
+  description = "Numeric id of the repository (gh api repos/<owner>/<repo> --jq .id)."
+  type        = number
+}
+
 variable "platform_resource_group_name" {
   description = "Resource group that the platform layer will own. Created here so RBAC can be scoped to it before the platform identity exists; the platform layer imports it."
   type        = string

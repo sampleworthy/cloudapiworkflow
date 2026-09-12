@@ -43,7 +43,7 @@ resource "azurerm_role_assignment" "secrets_users" {
 # Optional private endpoint (prod). Dev keeps the vault reachable by the
 # deployer over the public endpoint with RBAC as the control.
 resource "azurerm_private_endpoint" "this" {
-  count = var.private_endpoint_subnet_id == null ? 0 : 1
+  count = var.enable_private_endpoint ? 1 : 0
 
   name                = "pe-${var.name}"
   location            = var.location

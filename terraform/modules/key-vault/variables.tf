@@ -30,6 +30,12 @@ variable "public_network_access_enabled" {
   default = true
 }
 
+variable "enable_private_endpoint" {
+  description = "Create a private endpoint (needs private_endpoint_subnet_id). Boolean so count is known at plan time."
+  type        = bool
+  default     = false
+}
+
 variable "private_endpoint_subnet_id" {
   description = "Subnet for a private endpoint. Null disables the endpoint."
   type        = string
