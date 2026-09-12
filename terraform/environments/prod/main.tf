@@ -201,7 +201,7 @@ resource "azuread_application_federated_identity_credential" "demo_client_github
   description    = "Lets the ${local.github_environment} deployment jobs acquire API tokens for post-deployment tests without a secret."
   audiences      = ["api://AzureADTokenExchange"]
   issuer         = "https://token.actions.githubusercontent.com"
-  subject        = "repo:${var.github_repository}:environment:${local.github_environment}"
+  subject        = "repo:${split("/", var.github_repository)[0]}@${var.github_owner_id}/${split("/", var.github_repository)[1]}@${var.github_repository_id}:environment:${local.github_environment}"
 }
 
 resource "time_rotating" "demo_client_secret" {
