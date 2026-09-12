@@ -115,7 +115,7 @@ endpoints. See [docs/cost.md](docs/cost.md).
 ## Getting started (platform administrator)
 
 ```bash
-# 0. prerequisites: az login (Owner + Application Administrator), terraform 1.5.7, gh
+# 0. prerequisites: az login (Owner + Application Administrator), terraform 1.16.2, gh
 # 1. bootstrap once (creates state storage, rg-cloudapiworkflow, OIDC identities)
 cd terraform/bootstrap && terraform init && terraform apply      # see docs/terraform.md for the state migration
 # 2. set GitHub variables + environments + ruleset               # docs/branch-protection.md

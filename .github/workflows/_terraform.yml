@@ -33,9 +33,6 @@ on:
       guard_shared_apim:
         type: boolean
         default: false
-      adopt_resource_group:
-        type: boolean
-        default: false
 
 env:
   TF_IN_AUTOMATION: "true"
@@ -115,8 +112,6 @@ jobs:
           working_directory: ${{ inputs.working_directory }}
           apply: "true"
           guard_shared_apim: ${{ inputs.guard_shared_apim }}
-          adopt_resource_group: ${{ inputs.adopt_resource_group }}
-          subscription_id: ${{ inputs.subscription_id }}
 
       - uses: actions/upload-artifact@v4
         with:

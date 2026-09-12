@@ -96,10 +96,18 @@ is that a malformed file would fail inside Terraform with a poor message, so
 ## Adopting the resource group
 
 Bootstrap creates `rg-cloudapiworkflow` so RBAC can be scoped to it before the
-platform identity exists. The platform layer then owns it. Terraform 1.5's
-`import` block cannot take a variable for the id, so the first platform apply
-runs `scripts/adopt-resource-group.sh`, which imports the group if it is not
-already in state and is a no-op afterwards.
+platform identity exists. The platform layer then owns it through a
+config-driven `import` block in `terraform/platform/<env>/main.tf`:
+
+```hcl
+import {
+  to = azurerm_resource_group.main
+  id = "/subscriptions/${var.subscription_id}/resourceGroups/${var.resource_group_name}"
+}
+```
+
+The first plan shows `1 to import`; afterwards the block is a no-op, so it
+stays in the code as documentation of where the group came from.
 
 ## First-time setup (platform administrator)
 
@@ -125,7 +133,7 @@ terraform init -migrate-state \
 
 ## Versions
 
-* Terraform `1.5.7` (`.terraform-version`, pinned in CI); `required_version = ">= 1.5.0, < 2.0.0"`
+* Terraform `1.16.2` (`.terraform-version`, pinned in CI); `required_version = ">= 1.16.0, < 2.0.0"`
 * `hashicorp/azurerm ~> 4.0`, `hashicorp/azuread ~> 3.0`, `hashicorp/random ~> 3.6`, `hashicorp/time ~> 0.12`
 * Lock files (`.terraform.lock.hcl`) are committed per root; CI runs `init -lockfile=readonly`
 

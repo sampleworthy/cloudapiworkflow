@@ -39,9 +39,15 @@ resource "random_string" "suffix" {
 }
 
 # ---------------------------------------------------------------------------
-# Resource group. Created empty by bootstrap (so RBAC could be scoped to it),
-# adopted here on the first run via `terraform import` in the deploy workflow.
+# Resource group. Created empty by bootstrap (so RBAC could be scoped to it
+# before the platform identity existed) and adopted here with a config-driven
+# import. The import block is idempotent: a no-op once the group is in state.
 # ---------------------------------------------------------------------------
+
+import {
+  to = azurerm_resource_group.main
+  id = "/subscriptions/${var.subscription_id}/resourceGroups/${var.resource_group_name}"
+}
 
 resource "azurerm_resource_group" "main" {
   name     = var.resource_group_name

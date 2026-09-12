@@ -40,7 +40,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.5.7"
+          terraform_version: "1.16.2"
           terraform_wrapper: false
       - name: terraform fmt -check
         run: terraform fmt -check -recursive -diff terraform
