@@ -10,6 +10,9 @@ inputs:
   environment:
     description: development | production
     default: development
+  repository_variables:
+    description: "The caller's ${{ toJSON(vars) }} (the vars context is not visible inside a composite action)"
+    required: true
 
 runs:
   using: composite
@@ -18,7 +21,7 @@ runs:
       shell: bash
       run: |
         cat > "$RUNNER_TEMP/vars.json" <<'JSON'
-        ${{ toJSON(vars) }}
+        ${{ inputs.repository_variables }}
         JSON
         jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
 

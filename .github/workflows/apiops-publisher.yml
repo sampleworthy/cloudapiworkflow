@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: ./.github/actions/platform-context
-        with: { environment: development }
+        with: { environment: development, repository_variables: "${{ toJSON(vars) }}" }
 
       - name: retirement guard (deleting an API needs an approved retirement PR)
         env: { GH_TOKEN: "${{ github.token }}" }
@@ -78,7 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/platform-context
-        with: { environment: development }
+        with: { environment: development, repository_variables: "${{ toJSON(vars) }}" }
       - run: pip install --quiet pyyaml
 
       # Tokens for the two demo clients via workload identity federation (the

@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { ref: "${{ inputs.commit_sha }}", fetch-depth: 0 }
       - uses: ./.github/actions/platform-context
-        with: { environment: production }
+        with: { environment: production, repository_variables: "${{ toJSON(vars) }}" }
       - name: retirement guard
         env: { GH_TOKEN: "${{ github.token }}" }
         run: scripts/retirement-guard.sh ${{ inputs.commit_sha }}
