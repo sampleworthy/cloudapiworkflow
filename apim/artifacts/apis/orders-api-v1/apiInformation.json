@@ -1,18 +1,25 @@
 {
   "properties": {
-    "displayName": "Orders API",
-    "description": "Create and query customer orders. Lifecycle: active. Owner: orders-team.",
     "path": "orders",
-    "protocols": ["https"],
-    "apiVersion": "v1",
-    "apiVersionSetId": "/apiVersionSets/orders-api",
     "apiRevision": "1",
     "apiRevisionDescription": "Initial release",
+    "apiVersion": "v1",
+    "apiVersionSetId": "/apiVersionSets/orders-api",
+    "authenticationSettings": {},
+    "contact": {
+      "email": "orders-team@example.com",
+      "name": "Orders team"
+    },
+    "description": "Create and query customer orders through the shared API Management gateway\nat /orders/v1. Reads require Orders.Read or Orders.Write; writes require\nOrders.Write.\n",
+    "displayName": "Orders API",
     "isCurrent": true,
-    "subscriptionRequired": false,
+    "protocols": [
+      "https"
+    ],
     "subscriptionKeyParameterNames": {
       "header": "Ocp-Apim-Subscription-Key",
       "query": "subscription-key"
-    }
+    },
+    "subscriptionRequired": false
   }
 }
