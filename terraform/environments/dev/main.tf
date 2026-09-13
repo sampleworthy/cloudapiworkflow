@@ -351,9 +351,12 @@ data "azuread_service_principal" "agent_deployer" {
   display_name = var.agent_deployer_display_name
 }
 
+# "Foundry User" carries the Microsoft.CognitiveServices/* data actions the
+# agents API needs (accounts/AIServices/agents/write, responses/*); the legacy
+# "Azure AI Developer" role does not (verified 2026-09-13 against the live project).
 resource "azurerm_role_assignment" "agent_deployer_ai_developer" {
   scope                = module.foundry.account_id
-  role_definition_name = "Azure AI Developer"
+  role_definition_name = "Foundry User"
   principal_id         = data.azuread_service_principal.agent_deployer.object_id
 }
 
