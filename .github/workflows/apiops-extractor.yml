@@ -25,7 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/platform-context
-        with: { environment: "${{ inputs.environment == 'prod' && 'production' || 'development' }}" }
+        with:
+          environment: ${{ inputs.environment == 'prod' && 'production' || 'development' }}
+          repository_variables: ${{ toJSON(vars) }}
       - run: pip install --quiet pyyaml
       - name: environment suffix
         id: env
