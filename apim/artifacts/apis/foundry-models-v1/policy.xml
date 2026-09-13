@@ -3,7 +3,9 @@
 
   Authentication : validate-jwt (issuer + audience)              -> 401
   Authorization  : roles claim must contain Models.Use            -> 403
-  Token limits   : fragment ai-token-governance (llm-token-limit) -> 429
+  Token limits   : none on the Consumption tier (llm-token-limit / rate-limit-by-key are
+                   classic/v2 only); classic/v2 environments include the ai-token-governance
+                   fragment documented in ai-gateway/README.md                 -> 429
   Observability  : fragment ai-observability (llm-emit-token-metric)
   Backend        : named backend "foundry-models", called with the gateway's managed identity
                    (Cognitive Services OpenAI User); no model key exists anywhere.
@@ -56,9 +58,7 @@
         </return-response>
       </when>
     </choose>
-    <include-fragment fragment-id="ai-token-governance" />
     <include-fragment fragment-id="ai-observability" />
-    <rate-limit-by-key calls="60" renewal-period="60" counter-key="@(((Jwt)context.Variables["jwt"]).Subject ?? context.Request.IpAddress)" />
     <set-backend-service backend-id="foundry-models" />
     <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
   </inbound>

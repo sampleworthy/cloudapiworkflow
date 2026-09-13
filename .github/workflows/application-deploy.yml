@@ -25,7 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: development
     permissions: { contents: read, id-token: write }
-    strategy: { fail-fast: false, matrix: { app: "${{ fromJson(needs.discover.outputs.apps) }}" } }
+    # One Oryx build at a time: the backends share one B1 plan and its Kudu capacity.
+    strategy: { fail-fast: false, max-parallel: 1, matrix: { app: "${{ fromJson(needs.discover.outputs.apps) }}" } }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -44,11 +45,22 @@ jobs:
           name=$(az webapp list -g "${{ vars.APIM_RESOURCE_GROUP_DEV }}" --query "[?tags.api=='${{ matrix.app }}'].name | [0]" -o tsv)
           [ -z "$name" ] && echo "::notice::no web app tagged api=${{ matrix.app }}; skipping"
           echo "name=$name" >> "$GITHUB_OUTPUT"
-      - name: package and zip-deploy (Oryx build on App Service)
+      - name: build a prebuilt package (dependencies resolved on the runner, linux x86_64 wheels)
+        if: steps.target.outputs.name != ''
+        working-directory: applications/${{ matrix.app }}
+        run: |
+          rm -rf .python_packages && pip install --quiet --only-binary=:all: --target .python_packages/lib/site-packages -r requirements.txt
+          zip -qr "$RUNNER_TEMP/app.zip" app requirements.txt .python_packages
+          echo "package: $(du -h "$RUNNER_TEMP/app.zip" | cut -f1)"
+
+      - name: zip-deploy (no server-side build; app stopped during the deploy to keep Kudu responsive on B1)
         if: steps.target.outputs.name != ''
         run: |
-          (cd applications/${{ matrix.app }} && zip -qr "$RUNNER_TEMP/app.zip" app requirements.txt)
-          az webapp deploy -g "${{ vars.APIM_RESOURCE_GROUP_DEV }}" -n "${{ steps.target.outputs.name }}" --src-path "$RUNNER_TEMP/app.zip" --type zip --clean true --restart true -o none
+          RG="${{ vars.APIM_RESOURCE_GROUP_DEV }}"; APP="${{ steps.target.outputs.name }}"
+          trap 'az webapp start -g "$RG" -n "$APP" -o none' EXIT   # never leave the app stopped
+          az webapp stop -g "$RG" -n "$APP" -o none
+          az webapp deploy -g "$RG" -n "$APP" --src-path "$RUNNER_TEMP/app.zip" --type zip --clean true --restart false --timeout 900000 -o none
+
       - name: wait for health through the gateway (when the API is published)
         if: steps.target.outputs.name != ''
         run: |

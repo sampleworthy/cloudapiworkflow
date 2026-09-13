@@ -1,0 +1,42 @@
+name: platform-context
+description: >
+  Exports the platform's non-secret configuration as environment variables:
+  repository variables first, then the github_variables output of the latest
+  successful terraform-deploy run for the environment (downloaded as the
+  outputs-<environment> artifact, no token beyond the job's own). Keys are
+  suffixed _DEV / _PROD. Needs `actions: read`.
+
+inputs:
+  environment:
+    description: development | production
+    default: development
+  repository_variables:
+    description: "JSON of the caller repository variables (pass toJSON of the vars context; it is not visible inside a composite action)"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: export repository variables (non-secret)
+      shell: bash
+      run: |
+        cat > "$RUNNER_TEMP/vars.json" <<'JSON'
+        ${{ inputs.repository_variables }}
+        JSON
+        jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
+
+    - name: export outputs of the latest successful platform deployment
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ENVIRONMENT: ${{ inputs.environment }}
+      run: |
+        suffix=$([ "$ENVIRONMENT" = "production" ] && echo PROD || echo DEV)
+        run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow terraform-deploy.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+        if [ -z "$run" ]; then echo "::notice::no successful terraform-deploy run found; using repository variables only"; exit 0; fi
+        if gh run download "$run" --repo "$GITHUB_REPOSITORY" -n "outputs-$ENVIRONMENT" -D "$RUNNER_TEMP/outputs" 2>/dev/null; then
+          jq -r --arg s "$suffix" '.github_variables.value | to_entries[] | "\(.key)_\($s)=\(.value)"' "$RUNNER_TEMP/outputs/outputs.json" >> "$GITHUB_ENV"
+          echo "platform outputs from terraform-deploy run $run exported with suffix _$suffix"
+        else
+          echo "::notice::outputs-$ENVIRONMENT artifact not available for run $run (expired or absent); using repository variables"
+        fi

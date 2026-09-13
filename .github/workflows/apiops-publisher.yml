@@ -23,18 +23,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: development
     concurrency: { group: apiops-dev, cancel-in-progress: false }
-    permissions: { contents: read, id-token: write, pull-requests: read }
+    permissions: { contents: read, id-token: write, pull-requests: read, actions: read }
     outputs:
       changed_apis: ${{ steps.changed.outputs.apis }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - name: export repository variables (non-secret) as environment variables
-        run: |
-          cat > "$RUNNER_TEMP/vars.json" <<'JSON'
-          ${{ toJSON(vars) }}
-          JSON
-          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/platform-context
+        with: { environment: development, repository_variables: "${{ toJSON(vars) }}" }
 
       - name: retirement guard (deleting an API needs an approved retirement PR)
         env: { GH_TOKEN: "${{ github.token }}" }
@@ -69,6 +65,7 @@ jobs:
 
       - name: verify published APIs (path / version / revision)
         run: |
+          set -o pipefail
           mapfile -t apis < <(echo '${{ steps.changed.outputs.apis }}' | jq -r '.[]')
           scripts/verify-publish.sh "${{ vars.APIM_RESOURCE_GROUP_DEV }}" "${{ vars.APIM_NAME_DEV }}" "${apis[@]}" | tee verify.log
           { echo '### Publish verification (dev)'; echo '```'; cat verify.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
@@ -78,15 +75,11 @@ jobs:
     needs: publish-dev
     runs-on: ubuntu-latest
     environment: development
-    permissions: { contents: read, id-token: write }
+    permissions: { contents: read, id-token: write, actions: read }
     steps:
       - uses: actions/checkout@v4
-      - name: export repository variables (non-secret) as environment variables
-        run: |
-          cat > "$RUNNER_TEMP/vars.json" <<'JSON'
-          ${{ toJSON(vars) }}
-          JSON
-          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/platform-context
+        with: { environment: development, repository_variables: "${{ toJSON(vars) }}" }
       - run: pip install --quiet pyyaml
 
       # Tokens for the two demo clients via workload identity federation (the
@@ -98,8 +91,7 @@ jobs:
         run: |
           JWT=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)
           for c in AGENT UNPRIVILEGED; do
-            id_var="${c}_CLIENT_ID_DEV"; client_id="${{ toJSON(vars) }}"
-            client_id=$(echo "$client_id" | jq -r --arg k "$id_var" '.[$k]')
+            client_id=$(printenv "${c}_CLIENT_ID_DEV")   # exported by platform-context
             az login --service-principal -u "$client_id" --federated-token "$JWT" --tenant "$TENANT_ID" --allow-no-subscriptions -o none
             tok=$(az account get-access-token --resource "$API_AUDIENCE" --query accessToken -o tsv)
             echo "::add-mask::$tok"; echo "${c}_TOKEN=$tok" >> "$GITHUB_ENV"; az logout
@@ -116,19 +108,25 @@ jobs:
           { echo '### Post-deployment tests (dev)'; echo '```'; cat smoke.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit $fail
 
-      - name: rate-limit enforcement (429 with Retry-After)
-        env: { APIM_GATEWAY_URL: "${{ vars.APIM_GATEWAY_URL_DEV }}" }
-        run: |
-          for d in apim/artifacts/apis/*/; do scripts/test-rate-limit.sh "$(basename "$d")" | tee -a rate.log; done
-          { echo '### Rate limit (dev)'; echo '```'; cat rate.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_APIOPS_PUBLISHER_CLIENT_ID_DEV }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+
+      # rate-limit-by-key (and llm-token-limit) exist on classic and v2 tiers only.
+      - name: rate-limit enforcement (429 with Retry-After) - classic / v2 tiers
+        env: { APIM_GATEWAY_URL: "${{ vars.APIM_GATEWAY_URL_DEV }}" }
+        run: |
+          sku=$(az apim show -g "${{ vars.APIM_RESOURCE_GROUP_DEV }}" -n "${{ vars.APIM_NAME_DEV }}" --query sku.name -o tsv)
+          if [[ "$sku" == Consumption* ]]; then
+            echo "::notice::APIM tier is $sku: rate-limit-by-key is not available on Consumption, rate-limit test not applicable"
+            printf '### Rate limit (dev)\n\nNot applicable: the %s tier has no throttling policies. Enforced (and tested) on classic and v2 tiers.\n\n' "$sku" >> "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          for d in apim/artifacts/apis/*/; do grep -q "<rate-limit-by-key" "$d/policy.xml" && scripts/test-rate-limit.sh "$(basename "$d")" | tee -a rate.log; done
+          { echo '### Rate limit (dev)'; echo '```'; cat rate.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: APIs now in the existing instance
         run: |
           { echo "### APIs in \`${{ vars.APIM_NAME_DEV }}\` (same instance, resource id unchanged)"; echo '```'
-            az apim api list -g "${{ vars.APIM_RESOURCE_GROUP_DEV }}" -n "${{ vars.APIM_NAME_DEV }}" --query "[].{api:name,path:path,version:apiVersion,revision:apiRevision}" -o table; echo '```'
+            az apim api list -g "${{ vars.APIM_RESOURCE_GROUP_DEV }}" --service-name "${{ vars.APIM_NAME_DEV }}" --query "[].{api:name,path:path,version:apiVersion,revision:apiRevision}" -o table; echo '```'
             echo; echo "App Insights: requests for the tests above -> \`AppRequests | where TimeGenerated > ago(15m) | summarize count() by tostring(Properties['API Name']), ResultCode\`"; } >> "$GITHUB_STEP_SUMMARY"

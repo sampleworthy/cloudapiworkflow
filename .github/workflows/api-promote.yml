@@ -35,16 +35,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     concurrency: { group: apiops-prod, cancel-in-progress: false }
-    permissions: { contents: read, id-token: write, pull-requests: read }
+    permissions: { contents: read, id-token: write, pull-requests: read, actions: read }
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ inputs.commit_sha }}", fetch-depth: 0 }
-      - name: export repository variables (non-secret) as environment variables
-        run: |
-          cat > "$RUNNER_TEMP/vars.json" <<'JSON'
-          ${{ toJSON(vars) }}
-          JSON
-          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/platform-context
+        with: { environment: production, repository_variables: "${{ toJSON(vars) }}" }
       - name: retirement guard
         env: { GH_TOKEN: "${{ github.token }}" }
         run: scripts/retirement-guard.sh ${{ inputs.commit_sha }}

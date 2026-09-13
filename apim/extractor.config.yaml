@@ -28,5 +28,4 @@ versionSets:
   - orders-api
   - foundry-models
 policyFragments:
-  - ai-token-governance
   - ai-observability

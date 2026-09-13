@@ -34,6 +34,8 @@ resource "azurerm_linux_web_app" "this" {
     vnet_route_all_enabled = var.vnet_integration_subnet_id != null
     app_command_line       = var.startup_command
     health_check_path      = var.health_check_path
+    # Provider-managed equivalent of WEBSITE_HEALTHCHECK_MAXPINGFAILURES
+    health_check_eviction_time_in_min = 2
 
     application_stack {
       python_version = var.python_version
@@ -84,10 +86,18 @@ resource "azurerm_linux_web_app" "this" {
 
   app_settings = merge(
     {
-      "SCM_DO_BUILD_DURING_DEPLOYMENT"             = "true"
-      "APPLICATIONINSIGHTS_CONNECTION_STRING"      = var.app_insights_connection_string
-      "ApplicationInsightsAgent_EXTENSION_VERSION" = "~3"
-      "WEBSITE_HEALTHCHECK_MAXPINGFAILURES"        = "3"
+      # Packages are built on the CI runner and deployed prebuilt (no Oryx build on the
+      # shared B1 plan); the dependencies live under .python_packages inside the zip.
+      "SCM_DO_BUILD_DURING_DEPLOYMENT" = "false"
+      "PYTHONPATH"                     = "/home/site/wwwroot/.python_packages/lib/site-packages"
+      # Run from package: Kudu mounts the uploaded zip instead of extracting thousands of
+      # files onto the network share, which is what timed out on the B1 plan.
+      "WEBSITE_RUN_FROM_PACKAGE"              = "1"
+      "APPLICATIONINSIGHTS_CONNECTION_STRING" = var.app_insights_connection_string
+      # The Linux Python auto-instrumentation agent (ApplicationInsightsAgent_EXTENSION_VERSION=~3)
+      # injects /agents/python/common with an old typing_extensions that shadows the app's
+      # dependencies (FastAPI fails to import). Telemetry comes from APIM diagnostics, App
+      # Service logs and, if wanted, the OpenTelemetry SDK inside the app instead.
     },
     var.app_settings
   )
@@ -98,7 +108,6 @@ resource "azurerm_linux_web_app" "this" {
     # Application code is deployed by its own pipeline; do not fight it.
     ignore_changes = [
       site_config[0].application_stack,
-      app_settings["WEBSITE_RUN_FROM_PACKAGE"],
     ]
   }
 }

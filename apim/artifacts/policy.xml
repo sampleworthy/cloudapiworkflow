@@ -19,7 +19,7 @@
          Agents, applications and demo clients all show up here by their client id. -->
     <set-variable name="callerId" value="@{
       var jwt = context.Request.Headers.GetValueOrDefault("Authorization", "").AsJwt();
-      if (jwt == null) return "anonymous";
+      if (jwt == null) { return "anonymous"; }
       var azp = jwt.Claims.GetValueOrDefault("azp", "");
       return string.IsNullOrEmpty(azp) ? jwt.Claims.GetValueOrDefault("appid", "unknown") : azp;
     }" />

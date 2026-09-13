@@ -21,15 +21,13 @@ jobs:
   extract:
     name: extract ${{ inputs.environment }} and compare with Git
     runs-on: ubuntu-latest
-    permissions: { contents: write, id-token: write, pull-requests: write }
+    permissions: { contents: write, id-token: write, pull-requests: write, actions: read }
     steps:
       - uses: actions/checkout@v4
-      - name: export repository variables (non-secret) as environment variables
-        run: |
-          cat > "$RUNNER_TEMP/vars.json" <<'JSON'
-          ${{ toJSON(vars) }}
-          JSON
-          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/platform-context
+        with:
+          environment: ${{ inputs.environment == 'prod' && 'production' || 'development' }}
+          repository_variables: ${{ toJSON(vars) }}
       - run: pip install --quiet pyyaml
       - name: environment suffix
         id: env
