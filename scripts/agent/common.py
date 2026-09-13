@@ -92,6 +92,40 @@ def build_sdk_tools(definition: dict, gateway_url: str):
     return tools
 
 
+def grant_agent_roles(credential, agent_principal_id: str, audience: str, roles: list[str]) -> list[str]:
+    """Ensure the agent's Entra identity holds the given app roles on the API
+    resource app (identified by its identifier URI = the tool audience).
+    Idempotent; returns the roles newly granted. Needs Graph
+    Application.Read.All + AppRoleAssignment.ReadWrite.All on the caller."""
+    import requests
+    token = credential.get_token("https://graph.microsoft.com/.default").token
+    h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    g = "https://graph.microsoft.com/v1.0"
+    r = requests.get(f"{g}/servicePrincipals", headers=h, params={"$filter": f"servicePrincipalNames/any(x:x eq '{audience}')", "$select": "id,appRoles,displayName"}, timeout=30)
+    r.raise_for_status()
+    sps = r.json().get("value", [])
+    if not sps:
+        raise SystemExit(f"no service principal found for audience {audience}")
+    resource = sps[0]
+    role_ids = {ar["value"]: ar["id"] for ar in resource["appRoles"]}
+    have = requests.get(f"{g}/servicePrincipals/{agent_principal_id}/appRoleAssignments", headers=h, timeout=30)
+    have.raise_for_status()
+    existing = {a["appRoleId"] for a in have.json().get("value", []) if a.get("resourceId") == resource["id"]}
+    granted = []
+    for role in roles:
+        rid = role_ids.get(role)
+        if rid is None:
+            raise SystemExit(f"role {role} does not exist on {resource['displayName']}")
+        if rid in existing:
+            continue
+        resp = requests.post(f"{g}/servicePrincipals/{agent_principal_id}/appRoleAssignments", headers=h, timeout=30,
+                             json={"principalId": agent_principal_id, "resourceId": resource["id"], "appRoleId": rid})
+        if resp.status_code not in (200, 201):
+            raise SystemExit(f"granting {role} failed: {resp.status_code} {resp.text[:300]}")
+        granted.append(role)
+    return granted
+
+
 def env(name: str, suffix: str | None = None) -> str:
     for key in ([f"{name}_{suffix}"] if suffix else []) + [name]:
         if os.environ.get(key):

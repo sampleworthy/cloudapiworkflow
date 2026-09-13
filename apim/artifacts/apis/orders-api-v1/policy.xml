@@ -34,6 +34,9 @@
           }">
             <return-response>
               <set-status code="403" reason="Forbidden" />
+              <set-header name="X-Caller-Id" exists-action="override">
+                <value>@(context.Variables.GetValueOrDefault<string>("callerId", "anonymous"))</value>
+              </set-header>
               <set-header name="Content-Type" exists-action="override">
                 <value>application/json</value>
               </set-header>

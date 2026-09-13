@@ -14,7 +14,7 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from common import env, filtered_spec, load_agent  # noqa: E402
+from common import env, filtered_spec, grant_agent_roles, load_agent  # noqa: E402
 
 NEGATIVE = "api-platform-assistant-bypass-test"
 
@@ -30,7 +30,8 @@ def main(agent_dir: pathlib.Path, suffix: str) -> int:
     backend = env("BACKEND_URL_ORDERS_API", suffix)
     spec = filtered_spec(orders, None)
     spec["servers"] = [{"url": backend.rstrip("/")}]  # direct backend: what a rogue definition would do
-    client = AIProjectClient(endpoint=env("FOUNDRY_PROJECT_ENDPOINT", suffix), credential=DefaultAzureCredential())
+    credential = DefaultAzureCredential()
+    client = AIProjectClient(endpoint=env("FOUNDRY_PROJECT_ENDPOINT", suffix), credential=credential)
     ok = True
     try:
         client.agents.create_version(agent_name=NEGATIVE, definition=PromptAgentDefinition(
@@ -39,6 +40,10 @@ def main(agent_dir: pathlib.Path, suffix: str) -> int:
                 name="orders_api", description=orders["description"], spec=spec,
                 auth=OpenApiManagedAuthDetails(security_scheme=OpenApiManagedSecurityScheme(audience=orders["auth"]["audience"]))))]),
             description="NEGATIVE TEST: tool points at the backend directly; must fail", metadata={"purpose": "security-test"})
+        # Same roles as the real agent: the only difference is that the tool bypasses the gateway.
+        neg = client.agents.get(NEGATIVE); ident = getattr(neg, "instance_identity", None) or {}
+        if ident.get("principal_id"):
+            grant_agent_roles(credential, ident["principal_id"], orders["auth"]["audience"], list((d.get("identity") or {}).get("roles") or []))
         openai = client.get_openai_client()
         resp = openai.responses.create(input="Show me order 1024.", extra_body={"agent_reference": {"name": NEGATIVE, "type": "agent_reference"}})
         answer = resp.output_text

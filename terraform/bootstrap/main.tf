@@ -9,7 +9,8 @@
 #        platform          Terraform deployer (Contributor on the group)
 #        apiops-publisher  writes API artifacts into the existing APIM instance
 #        apiops-extractor  reads APIM configuration for drift / sync PRs
-#        agent-deployer    deploys and tests agents in the Foundry project
+#        agent-deployer    deploys and tests agents in the Foundry project and grants
+#                          each agent's own Entra identity the app roles its definition declares
 # ---------------------------------------------------------------------------
 
 data "azurerm_client_config" "current" {}
@@ -233,7 +234,10 @@ locals {
     ]
     apiops-publisher = []
     apiops-extractor = []
-    agent-deployer   = []
+    agent-deployer = [
+      "Application.Read.All",            # resolve the API resource app and the agent's Entra identity
+      "AppRoleAssignment.ReadWrite.All", # grant an agent identity the roles its definition declares
+    ]
   }
 
   graph_role_assignments = {
