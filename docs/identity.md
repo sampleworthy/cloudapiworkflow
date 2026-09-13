@@ -57,7 +57,7 @@ authentication; the policy shape above then swaps the header check for
 | `sp-cloudapiworkflow-platform-<env>` | `environment:<env>`, `pull_request` (dev) | Contributor + UAA on the group; state container; Graph app management |
 | `sp-cloudapiworkflow-apiops-publisher-<env>` | `environment:<env>` | API Management Service Contributor + Reader |
 | `sp-cloudapiworkflow-apiops-extractor-<env>` | `ref:refs/heads/main`, `environment:<env>` | API Management Service Reader Role + Reader |
-| `sp-cloudapiworkflow-agent-deployer-<env>` | `environment:<env>` | Azure AI Developer on the Foundry account; Log Analytics Reader; Reader on the group |
+| `sp-cloudapiworkflow-agent-deployer-<env>` | `environment:<env>` | Foundry User on the Foundry account; Log Analytics Reader; Reader on the group |
 
 The agent deployer cannot touch APIM, Key Vault or Terraform state; APIOps
 identities cannot touch Foundry. Every identity's only credential is a
