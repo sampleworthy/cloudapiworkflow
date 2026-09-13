@@ -1,18 +1,25 @@
 {
   "properties": {
-    "displayName": "Skills API",
-    "description": "Read-only catalogue of technical skills. Lifecycle: active. Owner: skills-team.",
     "path": "skills",
-    "protocols": ["https"],
-    "apiVersion": "v1",
-    "apiVersionSetId": "/apiVersionSets/skills-api",
     "apiRevision": "1",
     "apiRevisionDescription": "Initial release",
+    "apiVersion": "v1",
+    "apiVersionSetId": "/apiVersionSets/skills-api",
+    "authenticationSettings": {},
+    "contact": {
+      "email": "skills-team@example.com",
+      "name": "Skills team"
+    },
+    "description": "Read-only catalogue of technical skills. Exposed through the shared API\nManagement gateway at /skills/v1. Callers present a Microsoft Entra\nclient-credentials token with the Skills.Read application role.\n",
+    "displayName": "Skills API",
     "isCurrent": true,
-    "subscriptionRequired": false,
+    "protocols": [
+      "https"
+    ],
     "subscriptionKeyParameterNames": {
       "header": "Ocp-Apim-Subscription-Key",
       "query": "subscription-key"
-    }
+    },
+    "subscriptionRequired": false
   }
 }
