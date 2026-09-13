@@ -73,7 +73,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/terraform
         with: { working_directory: "${{ inputs.working_directory }}", apply: "true" }
-      - name: publish platform outputs as repository variables (<KEY>_${{ inputs.env_suffix }})
+      # Best effort: the default job token cannot write repository variables
+      # (403). Consumers read the outputs artifact below through
+      # .github/actions/platform-context; variables are a fallback an operator
+      # can refresh with `terraform output -json github_variables`.
+      - name: publish platform outputs as repository variables (best effort)
+        continue-on-error: true
         env: { GH_TOKEN: "${{ github.token }}", SUFFIX: "${{ inputs.env_suffix }}" }
         working-directory: ${{ inputs.working_directory }}
         run: |
@@ -81,4 +86,4 @@ jobs:
             gh variable set "${k}_${SUFFIX}" --repo "$GITHUB_REPOSITORY" --body "$v" && echo "set ${k}_${SUFFIX}"
           done
       - uses: actions/upload-artifact@v4
-        with: { name: "outputs-${{ inputs.environment }}", path: "${{ inputs.working_directory }}/outputs.json", retention-days: 7 }
+        with: { name: "outputs-${{ inputs.environment }}", path: "${{ inputs.working_directory }}/outputs.json", retention-days: 90 }

@@ -23,18 +23,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: development
     concurrency: { group: apiops-dev, cancel-in-progress: false }
-    permissions: { contents: read, id-token: write, pull-requests: read }
+    permissions: { contents: read, id-token: write, pull-requests: read, actions: read }
     outputs:
       changed_apis: ${{ steps.changed.outputs.apis }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - name: export repository variables (non-secret) as environment variables
-        run: |
-          cat > "$RUNNER_TEMP/vars.json" <<'JSON'
-          ${{ toJSON(vars) }}
-          JSON
-          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/platform-context
+        with: { environment: development }
 
       - name: retirement guard (deleting an API needs an approved retirement PR)
         env: { GH_TOKEN: "${{ github.token }}" }
@@ -78,15 +74,11 @@ jobs:
     needs: publish-dev
     runs-on: ubuntu-latest
     environment: development
-    permissions: { contents: read, id-token: write }
+    permissions: { contents: read, id-token: write, actions: read }
     steps:
       - uses: actions/checkout@v4
-      - name: export repository variables (non-secret) as environment variables
-        run: |
-          cat > "$RUNNER_TEMP/vars.json" <<'JSON'
-          ${{ toJSON(vars) }}
-          JSON
-          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/platform-context
+        with: { environment: development }
       - run: pip install --quiet pyyaml
 
       # Tokens for the two demo clients via workload identity federation (the
