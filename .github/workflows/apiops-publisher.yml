@@ -65,6 +65,7 @@ jobs:
 
       - name: verify published APIs (path / version / revision)
         run: |
+          set -o pipefail
           mapfile -t apis < <(echo '${{ steps.changed.outputs.apis }}' | jq -r '.[]')
           scripts/verify-publish.sh "${{ vars.APIM_RESOURCE_GROUP_DEV }}" "${{ vars.APIM_NAME_DEV }}" "${apis[@]}" | tee verify.log
           { echo '### Publish verification (dev)'; echo '```'; cat verify.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
@@ -127,5 +128,5 @@ jobs:
       - name: APIs now in the existing instance
         run: |
           { echo "### APIs in \`${{ vars.APIM_NAME_DEV }}\` (same instance, resource id unchanged)"; echo '```'
-            az apim api list -g "${{ vars.APIM_RESOURCE_GROUP_DEV }}" -n "${{ vars.APIM_NAME_DEV }}" --query "[].{api:name,path:path,version:apiVersion,revision:apiRevision}" -o table; echo '```'
+            az apim api list -g "${{ vars.APIM_RESOURCE_GROUP_DEV }}" --service-name "${{ vars.APIM_NAME_DEV }}" --query "[].{api:name,path:path,version:apiVersion,revision:apiRevision}" -o table; echo '```'
             echo; echo "App Insights: requests for the tests above -> \`AppRequests | where TimeGenerated > ago(15m) | summarize count() by tostring(Properties['API Name']), ResultCode\`"; } >> "$GITHUB_STEP_SUMMARY"
