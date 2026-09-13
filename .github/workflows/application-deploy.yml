@@ -25,7 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: development
     permissions: { contents: read, id-token: write }
-    strategy: { fail-fast: false, matrix: { app: "${{ fromJson(needs.discover.outputs.apps) }}" } }
+    # One Oryx build at a time: the backends share one B1 plan and its Kudu capacity.
+    strategy: { fail-fast: false, max-parallel: 1, matrix: { app: "${{ fromJson(needs.discover.outputs.apps) }}" } }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
