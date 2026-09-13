@@ -73,7 +73,7 @@ CODEOWNERS requests the owning API team and the API platform team.
 | garbage bearer token | 401 |
 | valid token, no roles (unprivileged client) | 403 |
 | valid token with `Orders.Read` (agent client) | 200 |
-| 70 requests inside the 60/min limit | at least one 429 with `Retry-After` |
+| 70 requests inside the 60/min limit (classic/v2 tiers only; not applicable on Consumption) | at least one 429 with `Retry-After` |
 | `GET https://app-orders-api-<suffix>.azurewebsites.net/health` (no APIM) | 401 |
 
 7. job summary lists the APIs in the instance and links the App Insights query.
