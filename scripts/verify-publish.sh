@@ -16,7 +16,7 @@ for a in "${apis[@]}"; do
   want_path=$(python3 -c "import json;print(json.load(open('$info'))['properties']['path'])")
   want_ver=$(python3 -c "import json;print(json.load(open('$info'))['properties'].get('apiVersion',''))")
   want_rev=${rev:-$(python3 -c "import json;print(json.load(open('$info'))['properties'].get('apiRevision','1'))")}
-  got=$(az apim api show -g "$RG" --service-name "$APIM" --api-id "$id${rev:+;rev=$rev}" --query "[path, apiVersion, apiRevision]" -o tsv 2>/dev/null | tr '\t' ' ') || { echo "  FAIL $a not found in $APIM"; fail=1; continue; }
+  got=$(az apim api show -g "$RG" --service-name "$APIM" --api-id "$id${rev:+;rev=$rev}" --query "join(' ', [path, apiVersion, apiRevision])" -o tsv 2>/dev/null) || { echo "  FAIL $a not found in $APIM"; fail=1; continue; }
   if [ "$got" = "$want_path $want_ver $want_rev" ]; then echo "  PASS $a -> path=$want_path version=$want_ver revision=$want_rev"; else echo "  FAIL $a -> got '$got', want '$want_path $want_ver $want_rev'"; fail=1; fi
 done
 exit $fail
