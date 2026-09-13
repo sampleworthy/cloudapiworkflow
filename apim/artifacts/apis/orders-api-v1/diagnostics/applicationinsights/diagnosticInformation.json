@@ -10,12 +10,43 @@
       "percentage": 100
     },
     "frontend": {
-      "request":  { "headers": ["X-Correlation-Id", "User-Agent"], "body": { "bytes": 0 } },
-      "response": { "headers": ["X-Correlation-Id", "Retry-After"], "body": { "bytes": 0 } }
+      "request": {
+        "headers": [
+          "X-Correlation-Id",
+          "User-Agent"
+        ],
+        "body": {
+          "bytes": 0
+        }
+      },
+      "response": {
+        "headers": [
+          "X-Correlation-Id",
+          "X-Caller-Id",
+          "Retry-After"
+        ],
+        "body": {
+          "bytes": 0
+        }
+      }
     },
     "backend": {
-      "request":  { "headers": ["X-Correlation-Id"], "body": { "bytes": 0 } },
-      "response": { "headers": ["X-Correlation-Id"], "body": { "bytes": 0 } }
+      "request": {
+        "headers": [
+          "X-Correlation-Id"
+        ],
+        "body": {
+          "bytes": 0
+        }
+      },
+      "response": {
+        "headers": [
+          "X-Correlation-Id"
+        ],
+        "body": {
+          "bytes": 0
+        }
+      }
     }
   }
 }
