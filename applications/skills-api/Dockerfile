@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 EXPOSE 8000
 USER 1000
-CMD ["gunicorn", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000"]
+CMD ["python", "-m", "gunicorn", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000"]
