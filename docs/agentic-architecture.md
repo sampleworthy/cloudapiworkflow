@@ -17,7 +17,7 @@ flowchart TB
     FCD --> AGENTS["Agents<br/>API Platform Assistant (versions)"]
     PLAT --> GW
     APIS --> GW
-    AGENTS -->|"OpenAPI tools, project managed identity"| GW["APIM / AI Gateway"]
+    AGENTS -->|"OpenAPI tools, Foundry managed identity"| GW["APIM / AI Gateway"]
     GW --> API["Traditional API<br/>Orders, Skills"]
     GW --> MCPT["MCP tool<br/>(preview, optional)"]
     GW --> MODEL["AI model<br/>gpt-4.1-mini via /models/v1"]
@@ -52,8 +52,9 @@ commit). Rollback is redeploying the previous commit.
 ```text
 User: "Show me order 1024."
   1. agent decides orders_api.getOrder(orderId="ord-1024")
-  2. Foundry acquires a token for api://<tenant>/cloudapiworkflow-<env> as the agent's own
-     Entra identity (roles: Orders.Read, Skills.Read - declared in agent.yaml, granted by agent-deploy)
+  2. Foundry acquires a token for api://<tenant>/cloudapiworkflow-<env> as the Foundry account's
+     managed identity (roles: Orders.Read, Skills.Read - granted by Terraform; the agent's own
+     Entra Agent ID identity holds the same roles via agent-deploy for when Foundry uses it)
   3. APIM: validate-jwt → roles → rate limit → X-Correlation-Id, X-Caller-Id=<agent client id>
   4. APIM → Orders backend with APIM's managed identity (Easy Auth allows only APIM)
   5. answer: "Order ord-1024 for cust-7 is shipped, total 499.00 USD."
