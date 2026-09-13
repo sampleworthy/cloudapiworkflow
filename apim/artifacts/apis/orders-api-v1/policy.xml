@@ -8,7 +8,7 @@
 
   Authentication : validate-jwt (issuer + audience)     -> 401
   Authorization  : GET needs Orders.Read, other methods Orders.Write -> 403
-  Rate limit     : 100 calls / 60 s per token subject    -> 429
+  Rate limit     : none on the Consumption tier (rate-limit-by-key is classic/v2 only)
   Backend        : named backend "orders-api", called with the gateway's managed identity
 -->
 <policies>
@@ -41,7 +41,6 @@
             </return-response>
           </when>
         </choose>
-        <rate-limit-by-key calls="60" renewal-period="60" counter-key="@(((Jwt)context.Variables["jwt"]).Subject ?? context.Request.IpAddress)" />
       </when>
     </choose>
     <set-backend-service backend-id="orders-api" />
