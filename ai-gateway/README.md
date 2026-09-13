@@ -10,7 +10,7 @@ and deployed like every other policy.
 | model access through the gateway | API `foundry-models-v1` (`/models/v1`) | `apim/artifacts/apis/foundry-models-v1/` |
 | model backend (managed identity) | backend `foundry-models` | `apim/artifacts/backends/foundry-models/` |
 | approved deployments | named value `model-deployment` (per-environment override) | `apim/artifacts/named values/model-deployment/` |
-| token limits and daily quota per caller | policy fragment `ai-token-governance` | `apim/artifacts/policy fragments/ai-token-governance/policy.xml` |
+| token limits and daily quota per caller | policy fragment `ai-token-governance` (classic/v2 tiers; see below) | documented below, not in the Consumption tree |
 | token metrics per caller and API | policy fragment `ai-observability` | `apim/artifacts/policy fragments/ai-observability/policy.xml` |
 | caller attribution (agents, apps, clients) | global policy `X-Caller-Id` | `apim/artifacts/policy.xml` |
 | agent-to-API governance | the ordinary API policies (`validate-jwt`, roles, rate limit) | `apim/artifacts/apis/*/policy.xml` |
@@ -22,10 +22,11 @@ Identity chain: [docs/identity.md](../docs/identity.md).
 
 ## Token-based limits on classic and v2 tiers
 
-`llm-token-limit` is not accepted by the Consumption tier (the dev gateway
-rejects the artifact), so the `ai-token-governance` fragment enforces request
-and daily request budgets in dev. On StandardV2 (prod tfvars) replace the
-fragment body with:
+Neither `llm-token-limit` nor `rate-limit-by-key` is accepted by the
+Consumption tier (the dev gateway rejects the artifacts), so the committed
+tree has no throttling. On classic or v2 tiers add the fragment
+`policy fragments/ai-token-governance/policy.xml` with the content below and
+include it from the model API policy (`<include-fragment fragment-id="ai-token-governance" />`):
 
 ```xml
 <fragment>

@@ -4,7 +4,7 @@
 
 | tier | approx. monthly (East US 2) | VNet | static egress IP | provisioning | notes |
 |---|---|---|---|---|---|
-| Consumption | $0 for the first 1M calls, then ~$3.50 / 1M | no | no | ~2 min | serverless; use `*-by-key` rate/quota policies; no resource logs |
+| Consumption | $0 for the first 1M calls, then ~$3.50 / 1M | no | no | ~2 min | serverless; **no throttling policies at all** (`rate-limit*`, `quota*`, `llm-token-limit` rejected); no resource logs |
 | Developer | ~$50 | injection | yes | 30-45 min | full features, no SLA |
 | BasicV2 | ~$150 | no | no | minutes | SLA, no networking |
 | StandardV2 | ~$700 | outbound integration + inbound private endpoint | no | minutes | the production choice here |

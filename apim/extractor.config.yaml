@@ -25,5 +25,4 @@ versionSets:
   - skills-api
   - foundry-models
 policyFragments:
-  - ai-token-governance
   - ai-observability

@@ -37,7 +37,7 @@ APIM enforces, per API, in `apim/artifacts/apis/<api>/policy.xml`:
 |---|---|---|
 | signature, expiry, issuer, audience | `validate-jwt` with the tenant's OpenID configuration; audience `{{api-audience}}` | 401 |
 | required role for the operation | `choose` on the `roles` claim (GET vs write roles) | 403 with the standard error body |
-| per-caller rate | `rate-limit-by-key` keyed by the token subject | 429 + `Retry-After` |
+| per-caller rate (classic/v2 tiers; Consumption has no throttling policies) | `rate-limit-by-key` keyed by the token subject | 429 + `Retry-After` |
 
 `{{tenant-id}}` and `{{api-audience}}` are named values set per environment
 by APIOps; the XML in Git contains no identifiers. The test matrix (no token

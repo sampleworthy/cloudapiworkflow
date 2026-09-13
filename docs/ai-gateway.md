@@ -29,8 +29,8 @@ Status reflects Microsoft documentation as checked at implementation time
 |---|---|---|---|
 | Authentication | `validate-jwt` (Entra issuer, audience) | GA | every API incl. models |
 | Authorization | roles claim check → 403 | GA | every API incl. models (`Models.Use`) |
-| Rate limiting | `rate-limit-by-key` (all tiers incl. Consumption) | GA | every API |
-| Token limits and quotas | `llm-token-limit` (tokens-per-minute, `token-quota` + period, prompt-token estimation) | GA on classic and v2 tiers; **rejected on Consumption** (verified 2026-09-13) | `ai-token-governance` fragment: request/daily-request budget on Consumption, `llm-token-limit` on StandardV2 (ai-gateway/README.md) |
+| Rate limiting | `rate-limit-by-key` | GA on Developer, Basic, Standard, Premium and v2 tiers; **not available on Consumption** (verified 2026-09-13: "Policy is not allowed in 'Consumption' sku") | classic/v2 environments; the Consumption dev gateway has no throttling |
+| Token limits and quotas | `llm-token-limit` (tokens-per-minute, `token-quota` + period, prompt-token estimation) | GA on classic and v2 tiers; **rejected on Consumption** (verified 2026-09-13) | `ai-token-governance` fragment on classic/v2 environments (ai-gateway/README.md); absent from the Consumption dev tree |
 | Token metrics | `llm-emit-token-metric` → App Insights custom metrics, dimensioned by caller | GA, accepted on Consumption (verified 2026-09-13) | `ai-observability` fragment |
 | Model routing / load balancing | backends + backend pool with priority/weight and circuit breaker | GA | documented as the multi-model extension |
 | Semantic caching | `llm-semantic-cache-lookup/store` (needs Azure Managed Redis) | GA | not deployed (cost) |
@@ -81,12 +81,24 @@ opt-in artifact and the agent tool change needed to use it.
 
 | fragment | contents | included by |
 |---|---|---|
-| `ai-token-governance` | per-caller budget: 30 requests/min and 2 000 requests/day on Consumption; `llm-token-limit` (2 000 TPM, 200 000 tokens/day) on StandardV2 | model APIs |
+| `ai-token-governance` (classic/v2 only) | `llm-token-limit` per caller: 2 000 TPM, 200 000 tokens/day, prompt estimation; see ai-gateway/README.md | model APIs on classic/v2 tiers |
 | `ai-observability` | `llm-emit-token-metric` with caller and API dimensions | model APIs |
 
 Fragments live in `apim/artifacts/policy fragments/` and are versioned,
 reviewed and published like any policy. A new model API includes them with
 two lines and inherits the platform's standards.
+
+## Tier parity: a finding from the live run
+
+The dev gateway runs on Consumption to keep the demo near $0. The first
+publishes showed that Consumption rejects `rate-limit-by-key`, `quota-by-key`
+and `llm-token-limit` outright ("Policy is not allowed in 'Consumption'
+sku"), so a policy tree written for StandardV2 cannot be published to a
+Consumption instance. Consequences:
+
+* the committed tree is Consumption-compatible: no throttling or token limits in dev;
+* the 429 test reports "not applicable" on Consumption and runs on classic/v2 tiers;
+* an enterprise should keep the same tier family in every environment (BasicV2 in dev, StandardV2 in prod, or Developer in dev) so one artifact tree promotes unchanged. Switching dev is one tfvars value (`apim_sku_name`) and a `terraform-deploy` run.
 
 ## Scaling to dozens of APIs and agents
 
