@@ -18,21 +18,24 @@ flowchart LR
 | identity | kind | what it proves | granted by |
 |---|---|---|---|
 | user | person | who is asking; what the application may do for them | the application's own Entra registration and scopes |
-| agent / workload | the agent's own Entra identity (Microsoft Entra Agent ID: Foundry creates `<account>-<project>-<agent>-AgentIdentity` per agent, type ServiceIdentity) | which agent is calling and which APIs it may read | `agent-deploy` grants the roles declared in `agent.yaml` (`identity.roles`), allow-listed in `governance/agent-roles.yaml` |
+| agent / workload | today: the Foundry **account**'s system-assigned managed identity (observed as `azp` at APIM on 2026-09-13); Foundry also creates a per-agent Entra Agent ID identity (`<account>-<project>-<agent>-AgentIdentity`, type ServiceIdentity) | which Foundry account (and, once Foundry uses it for tool auth, which agent) is calling, and which APIs it may read | Terraform grants `agent_app_roles` to the account and project identities; `agent-deploy` grants the roles declared in `agent.yaml` (`identity.roles`, allow-listed in `governance/agent-roles.yaml`) to the agent's own identity |
 | APIM | APIM system-assigned managed identity | that the request passed the gateway | Terraform: Easy Auth allow-list on backends; `Cognitive Services OpenAI User` on Foundry |
 | backend | web app system-assigned managed identity | access to Key Vault | Terraform: Key Vault Secrets User |
 | pipelines | four federated identities per environment | which workflow, in which GitHub environment | bootstrap: federated credentials + RBAC |
 
 ## User identity vs agent identity
 
-Each agent is a workload with its **own** identity: Foundry provisions an
-Entra Agent ID identity per agent (verified on the live project: tool calls
-arrive at APIM with the agent identity's client id, not the project's). Its
-permissions are the **union of what any user may obtain through it**, which
-is why they are read-only, narrow, and allow-listed by the platform team. The
-user's identity does not reach APIM today: Foundry authenticates OpenAPI tools
-with the agent identity and does not perform on-behalf-of exchanges for tool
-calls.
+Foundry provisions an Entra Agent ID identity per agent, but as of
+2026-09-13 OpenAPI tool calls arrive at APIM signed by the Foundry
+**account** managed identity (verified through the gateway's `X-Caller-Id`
+attribution). In this platform that identity is shared by every agent in the
+account, so its permissions are the **union of what any user of any agent
+may obtain**, which is why they are read-only, narrow, and set by the platform
+team in Terraform. The per-agent identities are granted their declared roles
+by `agent-deploy` so that the day Foundry signs tool calls with them, the
+authorization model becomes per agent without a platform change. The user's
+identity does not reach APIM today: Foundry does not perform on-behalf-of
+exchanges for tool calls.
 
 Consequences the design accepts and documents:
 

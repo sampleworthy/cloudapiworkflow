@@ -130,21 +130,22 @@ output "github_variables" {
   description = "Published by terraform-deploy as repository variables <KEY>_<ENV>."
   value = merge(
     {
-      APIM_NAME                   = module.apim.name
-      APIM_GATEWAY_URL            = module.apim.gateway_url
-      APIM_RESOURCE_GROUP         = azurerm_resource_group.main.name
-      API_AUDIENCE                = module.api_resource_app.identifier_uri
-      AGENT_CLIENT_ID             = azuread_application.demo_client["agent"].client_id
-      UNPRIVILEGED_CLIENT_ID      = azuread_application.demo_client["unprivileged"].client_id
-      APPINSIGHTS_ID              = module.monitoring.app_insights_id
-      APPINSIGHTS_SECRET_ID       = azurerm_key_vault_secret.appinsights_connection_string.versionless_id
-      KEY_VAULT_NAME              = module.key_vault.name
-      FOUNDRY_PROJECT_ENDPOINT    = module.foundry.project_endpoint
-      FOUNDRY_OPENAI_ENDPOINT     = module.foundry.openai_endpoint
-      FOUNDRY_MODEL_DEPLOYMENT    = module.foundry.model_deployment_name
-      AGENT_IDENTITY_PRINCIPAL_ID = module.foundry.project_identity_principal_id
-      AGENT_IDENTITY_CLIENT_ID    = data.azuread_service_principal.agent_identity.client_id
-      LOG_ANALYTICS_WORKSPACE_ID  = module.monitoring.log_analytics_workspace_customer_id
+      APIM_NAME                          = module.apim.name
+      APIM_GATEWAY_URL                   = module.apim.gateway_url
+      APIM_RESOURCE_GROUP                = azurerm_resource_group.main.name
+      API_AUDIENCE                       = module.api_resource_app.identifier_uri
+      AGENT_CLIENT_ID                    = azuread_application.demo_client["agent"].client_id
+      UNPRIVILEGED_CLIENT_ID             = azuread_application.demo_client["unprivileged"].client_id
+      APPINSIGHTS_ID                     = module.monitoring.app_insights_id
+      APPINSIGHTS_SECRET_ID              = azurerm_key_vault_secret.appinsights_connection_string.versionless_id
+      KEY_VAULT_NAME                     = module.key_vault.name
+      FOUNDRY_PROJECT_ENDPOINT           = module.foundry.project_endpoint
+      FOUNDRY_OPENAI_ENDPOINT            = module.foundry.openai_endpoint
+      FOUNDRY_MODEL_DEPLOYMENT           = module.foundry.model_deployment_name
+      AGENT_IDENTITY_PRINCIPAL_ID        = module.foundry.project_identity_principal_id
+      AGENT_IDENTITY_CLIENT_ID           = data.azuread_service_principal.agent_identity.client_id
+      FOUNDRY_ACCOUNT_IDENTITY_CLIENT_ID = data.azuread_service_principal.foundry_account_identity.client_id
+      LOG_ANALYTICS_WORKSPACE_ID         = module.monitoring.log_analytics_workspace_customer_id
     },
     { for k, app in module.backend_app : "BACKEND_URL_${upper(replace(k, "-", "_"))}" => app.url }
   )
