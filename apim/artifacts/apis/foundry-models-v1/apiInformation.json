@@ -1,18 +1,25 @@
 {
   "properties": {
-    "displayName": "Foundry Models",
-    "description": "Approved AI models behind the gateway: Entra authentication, Models.Use role, per-caller token limits and token metrics. Lifecycle: active. Owner: platform-team.",
     "path": "models",
-    "protocols": ["https"],
-    "apiVersion": "v1",
-    "apiVersionSetId": "/apiVersionSets/foundry-models",
     "apiRevision": "1",
     "apiRevisionDescription": "Initial release: chat completions",
+    "apiVersion": "v1",
+    "apiVersionSetId": "/apiVersionSets/foundry-models",
+    "authenticationSettings": {},
+    "contact": {
+      "email": "platform-team@example.com",
+      "name": "Platform team"
+    },
+    "description": "Approved AI model deployments exposed through the shared gateway at\n/models/v1. The surface is the Azure OpenAI chat-completions API; the\ngateway adds Entra authentication (role Models.Use), per-caller token\nlimits, a daily token quota, token metrics and correlation. Consumers\nnever hold a model key.\n",
+    "displayName": "Foundry Models",
     "isCurrent": true,
-    "subscriptionRequired": false,
+    "protocols": [
+      "https"
+    ],
     "subscriptionKeyParameterNames": {
       "header": "Ocp-Apim-Subscription-Key",
       "query": "subscription-key"
-    }
+    },
+    "subscriptionRequired": false
   }
 }
