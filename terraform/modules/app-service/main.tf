@@ -34,6 +34,8 @@ resource "azurerm_linux_web_app" "this" {
     vnet_route_all_enabled = var.vnet_integration_subnet_id != null
     app_command_line       = var.startup_command
     health_check_path      = var.health_check_path
+    # Provider-managed equivalent of WEBSITE_HEALTHCHECK_MAXPINGFAILURES
+    health_check_eviction_time_in_min = 2
 
     application_stack {
       python_version = var.python_version
@@ -87,7 +89,6 @@ resource "azurerm_linux_web_app" "this" {
       "SCM_DO_BUILD_DURING_DEPLOYMENT"             = "true"
       "APPLICATIONINSIGHTS_CONNECTION_STRING"      = var.app_insights_connection_string
       "ApplicationInsightsAgent_EXTENSION_VERSION" = "~3"
-      "WEBSITE_HEALTHCHECK_MAXPINGFAILURES"        = "3"
     },
     var.app_settings
   )
