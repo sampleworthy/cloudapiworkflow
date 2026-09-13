@@ -4,6 +4,7 @@
 # Add every API here when it is onboarded.
 apis:
   - skills-api-v1
+  - orders-api-v1
   - foundry-models-v1
 namedValues:
   - tenant-id
@@ -20,9 +21,11 @@ products:
   - agent-apis
 backends:
   - skills-api
+  - orders-api
   - foundry-models
 versionSets:
   - skills-api
+  - orders-api
   - foundry-models
 policyFragments:
   - ai-observability

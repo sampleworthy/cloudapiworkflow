@@ -1,0 +1,11 @@
+{
+  "properties": {
+    "protocol": "http",
+    "url": "https://app-orders-api.placeholder.invalid",
+    "description": "Orders API backend (App Service). URL is overridden per environment in apim/configuration.<env>.yaml.",
+    "tls": {
+      "validateCertificateChain": true,
+      "validateCertificateName": true
+    }
+  }
+}

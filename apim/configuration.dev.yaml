@@ -44,6 +44,9 @@ backends:
   - name: skills-api
     properties:
       url: "{#BACKEND_URL_SKILLS_API#}"
+  - name: orders-api
+    properties:
+      url: "{#BACKEND_URL_ORDERS_API#}"
   - name: foundry-models
     properties:
       url: "{#FOUNDRY_OPENAI_ENDPOINT#}/openai"

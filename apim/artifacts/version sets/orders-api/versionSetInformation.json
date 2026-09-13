@@ -1,0 +1,7 @@
+{
+  "properties": {
+    "displayName": "Orders API",
+    "description": "Versions of the Orders API. Path segment versioning: /orders/v1, /orders/v2.",
+    "versioningScheme": "Segment"
+  }
+}

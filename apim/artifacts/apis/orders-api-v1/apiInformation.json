@@ -1,0 +1,18 @@
+{
+  "properties": {
+    "displayName": "Orders API",
+    "description": "Create and query customer orders. Lifecycle: active. Owner: orders-team.",
+    "path": "orders",
+    "protocols": ["https"],
+    "apiVersion": "v1",
+    "apiVersionSetId": "/apiVersionSets/orders-api",
+    "apiRevision": "1",
+    "apiRevisionDescription": "Initial release",
+    "isCurrent": true,
+    "subscriptionRequired": false,
+    "subscriptionKeyParameterNames": {
+      "header": "Ocp-Apim-Subscription-Key",
+      "query": "subscription-key"
+    }
+  }
+}
