@@ -88,6 +88,17 @@ AppServiceAuthenticationLogs | where TimeGenerated > ago(24h) and StatusCode == 
 
 **Break-glass change in APIM.** See docs/apiops.md; run the extractor within a day so Git catches up.
 
+## Findings from the first live run (2026-09-13)
+
+| symptom | cause | fix |
+|---|---|---|
+| Backend containers exit with gunicorn "Worker failed to boot", `ImportError: cannot import name 'sentinel' from 'typing_extensions' (/agents/python/common/...)` | the Linux Python App Insights auto-instrumentation agent (`ApplicationInsightsAgent_EXTENSION_VERSION=~3`) prepends its own old `typing_extensions` to the path | agent setting removed from `modules/app-service`; telemetry comes from APIM diagnostics and App Service logs (add the OpenTelemetry SDK in the app if code-level traces are needed) |
+| `az webapp deploy` reports failure while Kudu is still building; later `504 GatewayTimeout` from Kudu | Oryx builds on the shared B1 plan take 5-10 minutes and two parallel builds starve Kudu | `--timeout 1500000` on the deploy and `max-parallel: 1` in the matrix |
+| Publisher rejects `rate-limit-by-key`, `quota-by-key`, `llm-token-limit`: "Policy is not allowed in 'Consumption' sku" | the Consumption tier has no throttling policies | tree kept Consumption-compatible; 429 test reports "not applicable"; see docs/ai-gateway.md tier parity |
+| Publisher rejects the global policy: "Expected a { but found a return" | APIM policy expressions require braces around `if` bodies | braces added |
+| terraform-deploy "failed" although apply succeeded: `Resource not accessible by integration` | the job token cannot write repository variables | `.github/actions/platform-context` reads the deployment's outputs artifact; variables are a manual fallback |
+| PR plan: `AADSTS700213 No matching federated identity record ... 'repo:owner@id/repo@id:pull_request'` | GitHub issues immutable OIDC subjects with owner and repository ids | bootstrap builds subjects from `github_owner_id` / `github_repository_id` |
+
 ## Alerts (prod)
 
 | signal | threshold |
