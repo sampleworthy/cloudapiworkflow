@@ -9,7 +9,7 @@ backend directly.
 |---|---|
 | Lifecycle | **active** |
 | Runtime | Microsoft Foundry project `proj-cloudapiworkflow-<env>`, model `gpt-4.1-mini` |
-| Identity | the project's managed identity; app roles `Skills.Read`, `Orders.Read` (read-only) |
+| Identity | its own Entra Agent ID identity (`…-api-platform-assistant-AgentIdentity`); app roles `Skills.Read`, `Orders.Read` declared in `agent.yaml`, granted at deploy |
 | Tools | `orders_api` → `/orders/v1`, `skills_api` → `/skills/v1`, both via APIM with managed-identity auth |
 | Deployed by | `agent-deploy` (GitHub OIDC → `sp-cloudapiworkflow-agent-deployer-<env>` → new agent version) |
 | Owner | ai-platform-team |

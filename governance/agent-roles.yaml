@@ -1,0 +1,8 @@
+# Application permissions an agent definition may request for its own Entra
+# identity (agents/<name>/agent-definition/agent.yaml -> identity.roles).
+# Owned by the platform team; agent-ci rejects anything not listed here.
+# Read-only by design: an agent that needs a write role needs a platform PR.
+allowedRoles:
+  - Skills.Read
+  - Orders.Read
+  - Models.Use
