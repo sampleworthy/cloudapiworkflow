@@ -323,11 +323,19 @@ module "foundry" {
 # Agent workload identity: the Foundry project's managed identity is granted
 # read roles on the API resource app, so its tool calls carry
 # roles=[Skills.Read, Orders.Read] and APIM authorises them like any client.
+# Foundry signs OpenAPI-tool calls with the account's identity today (the
+# project identity was granted first and tool calls still arrived without
+# roles), so both identities hold the read roles.
 resource "azuread_app_role_assignment" "agent_identity" {
-  for_each = toset(var.agent_app_roles)
+  for_each = {
+    for pair in setproduct(["project", "account"], var.agent_app_roles) : "${pair[0]}|${pair[1]}" => {
+      principal_id = pair[0] == "project" ? module.foundry.project_identity_principal_id : module.foundry.account_identity_principal_id
+      role         = pair[1]
+    }
+  }
 
-  app_role_id         = module.api_resource_app.app_role_ids[each.value]
-  principal_object_id = module.foundry.project_identity_principal_id
+  app_role_id         = module.api_resource_app.app_role_ids[each.value.role]
+  principal_object_id = each.value.principal_id
   resource_object_id  = module.api_resource_app.service_principal_object_id
 }
 
