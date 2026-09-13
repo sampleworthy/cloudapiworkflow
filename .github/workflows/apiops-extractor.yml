@@ -67,4 +67,5 @@ jobs:
           labels: apim-drift
           commit-message: "apiops: extract ${{ inputs.environment }} configuration drift"
           body-path: drift.txt
+          add-paths: apim/artifacts
           delete-branch: true
