@@ -21,6 +21,8 @@
           <openid-config url="https://login.microsoftonline.com/{{tenant-id}}/v2.0/.well-known/openid-configuration" />
           <audiences>
             <audience>{{api-audience}}</audience>
+            <!-- the same resource app addressed by client id (aud = client id when the token is requested that way) -->
+            <audience>{{api-client-id}}</audience>
           </audiences>
           <issuers>
             <issuer>https://sts.windows.net/{{tenant-id}}/</issuer>

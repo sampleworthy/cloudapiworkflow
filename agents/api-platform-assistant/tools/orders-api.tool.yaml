@@ -14,7 +14,7 @@ gatewayPath: orders/v1
 # APIM validates it and checks the Orders.Read role. No key, no secret.
 auth:
   type: managed_identity
-  audience: "{#API_AUDIENCE#}"
+  audience: "{#API_RESOURCE_APP_CLIENT_ID#}"   # client-id form: a token-cache key distinct from the URI form (see docs/identity.md)
 
 # Read-only subset of the contract exposed to the model.
 allowedOperations:
