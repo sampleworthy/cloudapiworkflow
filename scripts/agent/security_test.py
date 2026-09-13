@@ -12,6 +12,7 @@ Env:   FOUNDRY_PROJECT_ENDPOINT_<S>, BACKEND_URL_ORDERS_API_<S>, API_AUDIENCE_<S
 import os
 import pathlib
 import sys
+import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from common import env, filtered_spec, grant_agent_roles, load_agent  # noqa: E402
@@ -40,10 +41,16 @@ def main(agent_dir: pathlib.Path, suffix: str) -> int:
                 name="orders_api", description=orders["description"], spec=spec,
                 auth=OpenApiManagedAuthDetails(security_scheme=OpenApiManagedSecurityScheme(audience=orders["auth"]["audience"]))))]),
             description="NEGATIVE TEST: tool points at the backend directly; must fail", metadata={"purpose": "security-test"})
-        # Same roles as the real agent: the only difference is that the tool bypasses the gateway.
+        # Same roles as the real agent so the ONLY difference is the URL. Best effort:
+        # Foundry signs tool calls with its account identity (which already holds the
+        # roles); the per-agent identity is new and may not be visible in Graph yet.
         neg = client.agents.get(NEGATIVE); ident = getattr(neg, "instance_identity", None) or {}
         if ident.get("principal_id"):
-            grant_agent_roles(credential, ident["principal_id"], orders["auth"]["audience"], list((d.get("identity") or {}).get("roles") or []))
+            for attempt in range(3):
+                try:
+                    grant_agent_roles(credential, ident["principal_id"], orders["auth"]["audience"], list((d.get("identity") or {}).get("roles") or [])); break
+                except Exception as e:  # noqa: BLE001
+                    print(f"  role grant to the throwaway identity not possible yet ({e}); retry {attempt + 1}/3"); time.sleep(10)
         openai = client.get_openai_client()
         resp = openai.responses.create(input="Show me order 1024.", extra_body={"agent_reference": {"name": NEGATIVE, "type": "agent_reference"}})
         answer = resp.output_text
