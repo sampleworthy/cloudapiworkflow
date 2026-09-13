@@ -20,6 +20,25 @@ model: [docs/ai-gateway.md](../docs/ai-gateway.md). Agent lifecycle and the
 end-to-end demo: [docs/agentic-architecture.md](../docs/agentic-architecture.md).
 Identity chain: [docs/identity.md](../docs/identity.md).
 
+## Token-based limits on classic and v2 tiers
+
+`llm-token-limit` is not accepted by the Consumption tier (the dev gateway
+rejects the artifact), so the `ai-token-governance` fragment enforces request
+and daily request budgets in dev. On StandardV2 (prod tfvars) replace the
+fragment body with:
+
+```xml
+<fragment>
+  <llm-token-limit counter-key="@(((Jwt)context.Variables["jwt"]).Subject ?? context.Request.IpAddress)"
+                   tokens-per-minute="2000" token-quota="200000" token-quota-period="Daily"
+                   estimate-prompt-tokens="true" remaining-tokens-variable-name="remainingTokens"
+                   remaining-quota-tokens-header-name="x-ratelimit-remaining-quota-tokens" />
+</fragment>
+```
+
+`llm-emit-token-metric` (the `ai-observability` fragment) is accepted on
+Consumption and reports prompt, completion and total tokens per caller.
+
 Why no `policies/` folder here: a second copy of gateway policy outside the
 APIOps tree would be a second source of truth. Fragments are the
 Microsoft-supported way to share policy across APIs, and they are already in
