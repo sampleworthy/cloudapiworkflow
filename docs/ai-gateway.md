@@ -30,8 +30,8 @@ Status reflects Microsoft documentation as checked at implementation time
 | Authentication | `validate-jwt` (Entra issuer, audience) | GA | every API incl. models |
 | Authorization | roles claim check → 403 | GA | every API incl. models (`Models.Use`) |
 | Rate limiting | `rate-limit-by-key` (all tiers incl. Consumption) | GA | every API |
-| Token limits and quotas | `llm-token-limit` (tokens-per-minute, `token-quota` + period, prompt-token estimation) | GA | `ai-token-governance` fragment |
-| Token metrics | `llm-emit-token-metric` → App Insights custom metrics, dimensioned by caller | GA | `ai-observability` fragment |
+| Token limits and quotas | `llm-token-limit` (tokens-per-minute, `token-quota` + period, prompt-token estimation) | GA on classic and v2 tiers; **rejected on Consumption** (verified 2026-09-13) | `ai-token-governance` fragment: request/daily-request budget on Consumption, `llm-token-limit` on StandardV2 (ai-gateway/README.md) |
+| Token metrics | `llm-emit-token-metric` → App Insights custom metrics, dimensioned by caller | GA, accepted on Consumption (verified 2026-09-13) | `ai-observability` fragment |
 | Model routing / load balancing | backends + backend pool with priority/weight and circuit breaker | GA | documented as the multi-model extension |
 | Semantic caching | `llm-semantic-cache-lookup/store` (needs Azure Managed Redis) | GA | not deployed (cost) |
 | Content safety | `llm-content-safety` (Azure AI Content Safety in front of the model) | GA on classic and v2 tiers; verify Consumption | documented; enable in prod tfvars |
@@ -81,7 +81,7 @@ opt-in artifact and the agent tool change needed to use it.
 
 | fragment | contents | included by |
 |---|---|---|
-| `ai-token-governance` | `llm-token-limit` per caller: 2 000 TPM, 200 000 tokens/day, prompt estimation | model APIs |
+| `ai-token-governance` | per-caller budget: 30 requests/min and 2 000 requests/day on Consumption; `llm-token-limit` (2 000 TPM, 200 000 tokens/day) on StandardV2 | model APIs |
 | `ai-observability` | `llm-emit-token-metric` with caller and API dimensions | model APIs |
 
 Fragments live in `apim/artifacts/policy fragments/` and are versioned,

@@ -1,16 +1,17 @@
 <!--
   Policy fragment: AI token governance (include in the inbound section of any
-  model API). Per-caller tokens-per-minute plus a daily token quota, keyed by
-  the token subject set by validate-jwt in the including policy.
-  llm-token-limit: GA. Prompt tokens are estimated before the call so an
-  over-quota caller is rejected without spending model capacity.
+  model API). Keyed by the token subject set by validate-jwt in the including
+  policy.
+
+  Tier note (verified 2026-09-13 against this instance): llm-token-limit is
+  "not allowed in 'Consumption' sku". The dev gateway therefore enforces a
+  per-caller REQUEST budget here; on the classic and v2 tiers used in
+  production, replace the body with the token-based limit documented in
+  ai-gateway/README.md (llm-token-limit with tokens-per-minute, token-quota
+  and prompt-token estimation). The include in the model API policy stays
+  the same, so the artifact tree is identical across environments.
 -->
 <fragment>
-  <llm-token-limit counter-key="@(((Jwt)context.Variables["jwt"]).Subject ?? context.Request.IpAddress)"
-                   tokens-per-minute="2000"
-                   token-quota="200000"
-                   token-quota-period="Daily"
-                   estimate-prompt-tokens="true"
-                   remaining-tokens-variable-name="remainingTokens"
-                   remaining-quota-tokens-header-name="x-ratelimit-remaining-quota-tokens" />
+  <rate-limit-by-key calls="30" renewal-period="60" counter-key="@(((Jwt)context.Variables["jwt"]).Subject ?? context.Request.IpAddress)" />
+  <quota-by-key calls="2000" renewal-period="86400" counter-key="@(((Jwt)context.Variables["jwt"]).Subject ?? context.Request.IpAddress)" />
 </fragment>
