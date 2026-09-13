@@ -56,6 +56,16 @@ documented as the target once Foundry supports user-delegated tool
 authentication; the policy shape above then swaps the header check for
 `validate-jwt` on the delegated token.
 
+## Token audience: identifier URI or client id
+
+The resource app can be addressed by its identifier URI
+(`api://<tenant>/cloudapiworkflow-<env>`, used by applications and the demo
+clients) or by its client id (used by the agent tools). APIM accepts both
+(`{{api-audience}}`, `{{api-client-id}}`). Managed-identity tokens are cached
+per requested resource for up to a day; requesting by client id gives the
+agent a token minted after its roles were granted instead of the cached
+role-less one (observed on 2026-09-13).
+
 ## Pipeline identities
 
 | identity | subjects | rights |
