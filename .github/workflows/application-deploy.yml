@@ -57,9 +57,9 @@ jobs:
         if: steps.target.outputs.name != ''
         run: |
           RG="${{ vars.APIM_RESOURCE_GROUP_DEV }}"; APP="${{ steps.target.outputs.name }}"
+          trap 'az webapp start -g "$RG" -n "$APP" -o none' EXIT   # never leave the app stopped
           az webapp stop -g "$RG" -n "$APP" -o none
           az webapp deploy -g "$RG" -n "$APP" --src-path "$RUNNER_TEMP/app.zip" --type zip --clean true --restart false --timeout 900000 -o none
-          az webapp start -g "$RG" -n "$APP" -o none
 
       - name: wait for health through the gateway (when the API is published)
         if: steps.target.outputs.name != ''
