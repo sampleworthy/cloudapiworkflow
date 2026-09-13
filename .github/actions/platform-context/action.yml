@@ -11,7 +11,7 @@ inputs:
     description: development | production
     default: development
   repository_variables:
-    description: "The caller's ${{ toJSON(vars) }} (the vars context is not visible inside a composite action)"
+    description: "JSON of the caller repository variables (pass toJSON of the vars context; it is not visible inside a composite action)"
     required: true
 
 runs:
