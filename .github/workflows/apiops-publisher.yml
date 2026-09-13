@@ -108,17 +108,23 @@ jobs:
           { echo '### Post-deployment tests (dev)'; echo '```'; cat smoke.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit $fail
 
-      - name: rate-limit enforcement (429 with Retry-After)
-        env: { APIM_GATEWAY_URL: "${{ vars.APIM_GATEWAY_URL_DEV }}" }
-        run: |
-          for d in apim/artifacts/apis/*/; do scripts/test-rate-limit.sh "$(basename "$d")" | tee -a rate.log; done
-          { echo '### Rate limit (dev)'; echo '```'; cat rate.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_APIOPS_PUBLISHER_CLIENT_ID_DEV }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+
+      # rate-limit-by-key (and llm-token-limit) exist on classic and v2 tiers only.
+      - name: rate-limit enforcement (429 with Retry-After) - classic / v2 tiers
+        env: { APIM_GATEWAY_URL: "${{ vars.APIM_GATEWAY_URL_DEV }}" }
+        run: |
+          sku=$(az apim show -g "${{ vars.APIM_RESOURCE_GROUP_DEV }}" -n "${{ vars.APIM_NAME_DEV }}" --query sku.name -o tsv)
+          if [[ "$sku" == Consumption* ]]; then
+            echo "::notice::APIM tier is $sku: rate-limit-by-key is not available on Consumption, rate-limit test not applicable"
+            printf '### Rate limit (dev)\n\nNot applicable: the %s tier has no throttling policies. Enforced (and tested) on classic and v2 tiers.\n\n' "$sku" >> "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          for d in apim/artifacts/apis/*/; do grep -q "<rate-limit-by-key" "$d/policy.xml" && scripts/test-rate-limit.sh "$(basename "$d")" | tee -a rate.log; done
+          { echo '### Rate limit (dev)'; echo '```'; cat rate.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: APIs now in the existing instance
         run: |
           { echo "### APIs in \`${{ vars.APIM_NAME_DEV }}\` (same instance, resource id unchanged)"; echo '```'

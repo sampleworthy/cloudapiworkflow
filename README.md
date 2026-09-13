@@ -118,7 +118,8 @@ deprecation period; the publisher refuses unlabelled deletions.
 
 **Post-deployment tests.** A green publish proves nothing; the tests prove the
 API answers, authentication and authorization behave (401/401/403/200), rate
-limiting works (429), and the backend is unreachable without the gateway.
+limiting works (429, on classic/v2 tiers; Consumption has no throttling
+policies), and the backend is unreachable without the gateway.
 
 **Both kinds of drift.** Terraform plan on a schedule finds platform drift;
 the extractor finds APIM drift. Both report; neither remediates.
