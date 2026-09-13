@@ -20,6 +20,14 @@ model:
 
 instructions: instructions/system.md
 
+# Foundry creates a dedicated Entra identity for this agent (Entra Agent ID).
+# agent-deploy grants it exactly these application permissions on the API
+# resource app; agent-ci checks them against governance/agent-roles.yaml.
+identity:
+  roles:
+    - Skills.Read
+    - Orders.Read
+
 # Every tool is an approved enterprise API reached ONLY through the gateway.
 # Tool files reference the same OpenAPI documents APIOps publishes.
 tools:

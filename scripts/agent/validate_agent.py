@@ -7,6 +7,7 @@
   * tool gatewayPath equals that API's published path/version
   * allowedOperations exist in the contract and are read-only (GET) unless explicitly flagged
   * auth is managed_identity with an audience token; no keys, no hosts, no direct backend URLs anywhere
+  * identity.roles are declared and allowed by governance/agent-roles.yaml
 Usage: scripts/agent/validate_agent.py agents/api-platform-assistant
 """
 import json
@@ -41,6 +42,13 @@ def main(agent_dir: pathlib.Path) -> int:
         errors.append("instructions: contains a credential-looking string")
     if not d["_tools"]:
         errors.append("agent.yaml: at least one tool is required")
+    allowed = set((yaml.safe_load((ROOT / "governance" / "agent-roles.yaml").read_text()) or {}).get("allowedRoles") or [])
+    roles = list((d.get("identity") or {}).get("roles") or [])
+    if not roles:
+        errors.append("agent.yaml: identity.roles must list the app roles the agent identity needs")
+    for r in roles:
+        if r not in allowed:
+            errors.append(f"agent.yaml: identity role '{r}' is not in governance/agent-roles.yaml (platform PR required)")
     for tool in d["_tools"]:
         f = tool["_file"]
         raw = (agent_dir / f).read_text()

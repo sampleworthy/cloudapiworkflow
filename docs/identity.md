@@ -18,18 +18,21 @@ flowchart LR
 | identity | kind | what it proves | granted by |
 |---|---|---|---|
 | user | person | who is asking; what the application may do for them | the application's own Entra registration and scopes |
-| agent / workload | Foundry project system-assigned managed identity | which agent is calling and which APIs it may read | Terraform: app-role assignments `agent_app_roles` |
+| agent / workload | the agent's own Entra identity (Microsoft Entra Agent ID: Foundry creates `<account>-<project>-<agent>-AgentIdentity` per agent, type ServiceIdentity) | which agent is calling and which APIs it may read | `agent-deploy` grants the roles declared in `agent.yaml` (`identity.roles`), allow-listed in `governance/agent-roles.yaml` |
 | APIM | APIM system-assigned managed identity | that the request passed the gateway | Terraform: Easy Auth allow-list on backends; `Cognitive Services OpenAI User` on Foundry |
 | backend | web app system-assigned managed identity | access to Key Vault | Terraform: Key Vault Secrets User |
 | pipelines | four federated identities per environment | which workflow, in which GitHub environment | bootstrap: federated credentials + RBAC |
 
 ## User identity vs agent identity
 
-The agent is a shared workload: many users, one identity. Its permissions are
-therefore the **union of what any user may obtain through it**, which is why
-its roles are read-only and narrow. The user's identity does not reach APIM
-today: Foundry Agent Service authenticates OpenAPI tools with the project
-identity and does not perform on-behalf-of exchanges for tool calls.
+Each agent is a workload with its **own** identity: Foundry provisions an
+Entra Agent ID identity per agent (verified on the live project: tool calls
+arrive at APIM with the agent identity's client id, not the project's). Its
+permissions are the **union of what any user may obtain through it**, which
+is why they are read-only, narrow, and allow-listed by the platform team. The
+user's identity does not reach APIM today: Foundry authenticates OpenAPI tools
+with the agent identity and does not perform on-behalf-of exchanges for tool
+calls.
 
 Consequences the design accepts and documents:
 
@@ -57,7 +60,7 @@ authentication; the policy shape above then swaps the header check for
 | `sp-cloudapiworkflow-platform-<env>` | `environment:<env>`, `pull_request` (dev) | Contributor + UAA on the group; state container; Graph app management |
 | `sp-cloudapiworkflow-apiops-publisher-<env>` | `environment:<env>` | API Management Service Contributor + Reader |
 | `sp-cloudapiworkflow-apiops-extractor-<env>` | `ref:refs/heads/main`, `environment:<env>` | API Management Service Reader Role + Reader |
-| `sp-cloudapiworkflow-agent-deployer-<env>` | `environment:<env>` | Foundry User on the Foundry account; Log Analytics Reader; Reader on the group |
+| `sp-cloudapiworkflow-agent-deployer-<env>` | `environment:<env>` | Foundry User on the Foundry account; Log Analytics Reader; Reader on the group; Graph `Application.Read.All` + `AppRoleAssignment.ReadWrite.All` to grant agent identities their declared roles |
 
 The agent deployer cannot touch APIM, Key Vault or Terraform state; APIOps
 identities cannot touch Foundry. Every identity's only credential is a
