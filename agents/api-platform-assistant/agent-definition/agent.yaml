@@ -1,0 +1,27 @@
+# API Platform Assistant - declarative agent definition.
+#
+# Deployed by agent-deploy (Foundry CI/CD) as a new agent VERSION in the
+# environment's Foundry project using the azure-ai-projects SDK
+# (PromptAgentDefinition). Placeholders written as {# NAME #} (no spaces) are filled from GitHub
+# repository variables written by terraform-deploy - nothing environment-bound
+# or secret is committed here.
+name: api-platform-assistant
+displayName: API Platform Assistant
+description: >
+  Answers questions about orders and engineering skills by calling approved
+  enterprise APIs through the API Management gateway. Demonstrates governed
+  tool use, not conversation.
+owner: ai-platform-team
+lifecycle: active
+
+model:
+  deployment: "{#FOUNDRY_MODEL_DEPLOYMENT#}"
+  temperature: 0.1
+
+instructions: instructions/system.md
+
+# Every tool is an approved enterprise API reached ONLY through the gateway.
+# Tool files reference the same OpenAPI documents APIOps publishes.
+tools:
+  - tools/orders-api.tool.yaml
+  - tools/skills-api.tool.yaml

@@ -1,0 +1,53 @@
+# Agent deployment (Foundry CI/CD): after merge, creates a new version of each
+# agent in the environment's Foundry project, then proves the governed path
+# (prompt -> agent -> APIM -> Orders API, with telemetry) and that the
+# ungoverned path (agent -> backend directly) is blocked.
+name: agent-deploy
+
+on:
+  push:
+    branches: [main]
+    paths: ["agents/**", "scripts/agent/**", ".github/workflows/agent-deploy.yml"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [development, production]
+        default: development
+
+permissions: { contents: read }
+
+jobs:
+  deploy:
+    name: ${{ inputs.environment || 'development' }} / deploy + test
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'development' }}
+    concurrency: { group: "agents-${{ inputs.environment || 'development' }}", cancel-in-progress: false }
+    permissions: { contents: read, id-token: write, actions: read }
+    env:
+      SUFFIX: ${{ (inputs.environment || 'development') == 'production' && 'PROD' || 'DEV' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install --quiet -r scripts/agent/requirements.txt pytest
+      - uses: ./.github/actions/platform-context
+        with: { environment: "${{ inputs.environment || 'development' }}", repository_variables: "${{ toJSON(vars) }}" }
+
+      - name: validate before deploying
+        run: for d in agents/*/; do scripts/agent/validate_agent.py "$d"; done
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ (inputs.environment || 'development') == 'production' && vars.AZURE_AGENT_DEPLOYER_CLIENT_ID_PROD || vars.AZURE_AGENT_DEPLOYER_CLIENT_ID_DEV }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ (inputs.environment || 'development') == 'production' && vars.AZURE_SUBSCRIPTION_ID_PROD || vars.AZURE_SUBSCRIPTION_ID_DEV }}
+
+      - name: deploy agent versions (Foundry, OIDC identity, no secrets)
+        run: for d in agents/*/; do scripts/agent/deploy_agent.py "$d" "$SUFFIX"; done
+
+      - name: end-to-end test - "Show me order 1024." through APIM, with telemetry
+        run: scripts/agent/run_agent_test.py agents/api-platform-assistant "$SUFFIX"
+
+      - name: security test - agent configured against the backend directly must be blocked
+        run: scripts/agent/security_test.py agents/api-platform-assistant "$SUFFIX"
