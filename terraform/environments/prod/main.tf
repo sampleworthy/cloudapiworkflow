@@ -320,14 +320,22 @@ module "foundry" {
   tags                           = local.tags
 }
 
-# Agent workload identity: the Foundry project's managed identity is granted
-# read roles on the API resource app, so its tool calls carry
-# roles=[Skills.Read, Orders.Read] and APIM authorises them like any client.
+# Agent workload identity. Observed on the live platform (2026-09-13, APIM
+# X-Caller-Id): Foundry signs OpenAPI-tool calls with the Foundry ACCOUNT's
+# system-assigned identity. Each agent also receives its own Entra Agent ID
+# identity, which agent-deploy grants the same roles (see agents/), so the
+# platform is ready when Foundry moves tool auth onto per-agent identities.
+# Both Terraform-managed identities hold the read roles.
 resource "azuread_app_role_assignment" "agent_identity" {
-  for_each = toset(var.agent_app_roles)
+  for_each = {
+    for pair in setproduct(["account", "project"], var.agent_app_roles) : "${pair[0]}|${pair[1]}" => {
+      principal_id = pair[0] == "account" ? module.foundry.account_identity_principal_id : module.foundry.project_identity_principal_id
+      role         = pair[1]
+    }
+  }
 
-  app_role_id         = module.api_resource_app.app_role_ids[each.value]
-  principal_object_id = module.foundry.project_identity_principal_id
+  app_role_id         = module.api_resource_app.app_role_ids[each.value.role]
+  principal_object_id = each.value.principal_id
   resource_object_id  = module.api_resource_app.service_principal_object_id
 }
 
@@ -335,6 +343,10 @@ resource "azuread_app_role_assignment" "agent_identity" {
 # the end-to-end test matches APIM telemetry on it.
 data "azuread_service_principal" "agent_identity" {
   object_id = module.foundry.project_identity_principal_id
+}
+
+data "azuread_service_principal" "foundry_account_identity" {
+  object_id = module.foundry.account_identity_principal_id
 }
 
 # APIM -> Foundry models with the gateway's managed identity (model API in

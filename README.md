@@ -148,11 +148,12 @@ belong to API teams (APIOps). Agent changes are frequent, belong to AI teams,
 and are versioned in Foundry (SDK-driven deploy). Coupling them would make
 every team wait on every other.
 
-**Agent identity is a workload identity.** Every agent gets its own Entra
-Agent ID identity from Foundry; its definition declares read-only roles that
-the platform allow-lists and `agent-deploy` grants. Users are authenticated by
-the application; user-scoped authorization is propagated by the application
-or asserted to the gateway, never by widening the agent's roles.
+**Agent identity is a workload identity.** Tool calls are signed by a Foundry
+managed identity (the account's, as observed at the gateway) that Terraform
+grants read-only roles; every agent additionally gets its own Entra Agent ID
+identity whose declared, allow-listed roles `agent-deploy` grants. Users are
+authenticated by the application; user-scoped authorization is propagated by
+the application or asserted to the gateway, never by widening agent roles.
 
 **Preview features are optional.** MCP export and MCP OAuth in APIM are
 preview and the demo runs without them; token limits, token metrics, backend

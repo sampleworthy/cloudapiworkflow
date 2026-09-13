@@ -32,13 +32,13 @@ def ask(client, agent_name: str) -> tuple[str, list[str]]:
     return resp.output_text, kinds
 
 
-def telemetry(workspace: str, caller: str, since: dt.datetime) -> dict | None:
+def telemetry(workspace: str, caller: list[str], since: dt.datetime) -> dict | None:
     query = (
         "AppRequests | where TimeGenerated > datetime(%s) "
         "| where tostring(Properties['API Name']) == 'orders-api-v1' "
-        "| where tostring(Properties['Response-X-Caller-Id']) == '%s' "
+        "| where tostring(Properties['Response-X-Caller-Id']) in (%s) "
         "| project TimeGenerated, Name, ResultCode, DurationMs, CorrelationId = tostring(Properties['Response-X-Correlation-Id']) "
-        "| order by TimeGenerated desc | take 5" % (since.isoformat(), caller)
+        "| order by TimeGenerated desc | take 5" % (since.isoformat(), ", ".join("'%s'" % c for c in caller))
     )
     out = subprocess.run(["az", "monitor", "log-analytics", "query", "-w", workspace, "--analytics-query", query, "-o", "json"],
                          capture_output=True, text=True)
@@ -69,14 +69,17 @@ def main(agent_dir: pathlib.Path, suffix: str) -> int:
         print("  PASS a tool call was made")
 
     workspace = env("LOG_ANALYTICS_WORKSPACE_ID", suffix)
-    caller = os.environ.get(f"AGENT_INSTANCE_CLIENT_ID_{suffix}") or env("AGENT_IDENTITY_CLIENT_ID", suffix)
+    # Foundry may sign tool calls with the agent's own identity or with one of the
+    # Foundry managed identities; any of them proves the call came from the agent runtime.
+    caller = [c for c in (os.environ.get(f"AGENT_INSTANCE_CLIENT_ID_{suffix}"), os.environ.get(f"AGENT_IDENTITY_CLIENT_ID_{suffix}"),
+                          os.environ.get(f"FOUNDRY_ACCOUNT_IDENTITY_CLIENT_ID_{suffix}")) if c]
     row = None
     for attempt in range(24):
         row = telemetry(workspace, caller, since)
         if row: break
         print(f"  waiting for App Insights ingestion ({attempt + 1}/24)..."); time.sleep(15)
     if row and str(row.get("ResultCode")) == "200":
-        print(f"  PASS APIM telemetry: orders-api-v1 {row['Name']} -> {row['ResultCode']} in {row['DurationMs']} ms, caller {caller}, correlation {row.get('CorrelationId')}")
+        print(f"  PASS APIM telemetry: orders-api-v1 {row['Name']} -> {row['ResultCode']} in {row['DurationMs']} ms, callers {caller}, correlation {row.get('CorrelationId')}")
     else:
         print(f"  FAIL no APIM request from the agent identity {caller} for orders-api-v1 found in telemetry (row={row})"); ok = False
 
