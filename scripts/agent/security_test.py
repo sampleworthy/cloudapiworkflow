@@ -49,7 +49,7 @@ def main(agent_dir: pathlib.Path, suffix: str) -> int:
             for attempt in range(3):
                 try:
                     grant_agent_roles(credential, ident["principal_id"], orders["auth"]["audience"], list((d.get("identity") or {}).get("roles") or [])); break
-                except Exception as e:  # noqa: BLE001
+                except (Exception, SystemExit) as e:  # noqa: BLE001  (the helper exits on Graph errors)
                     print(f"  role grant to the throwaway identity not possible yet ({e}); retry {attempt + 1}/3"); time.sleep(10)
         openai = client.get_openai_client()
         resp = openai.responses.create(input="Show me order 1024.", extra_body={"agent_reference": {"name": NEGATIVE, "type": "agent_reference"}})
