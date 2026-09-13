@@ -101,7 +101,8 @@ def grant_agent_roles(credential, agent_principal_id: str, audience: str, roles:
     token = credential.get_token("https://graph.microsoft.com/.default").token
     h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     g = "https://graph.microsoft.com/v1.0"
-    r = requests.get(f"{g}/servicePrincipals", headers=h, params={"$filter": f"servicePrincipalNames/any(x:x eq '{audience}')", "$select": "id,appRoles,displayName"}, timeout=30)
+    flt = f"appId eq '{audience}'" if len(audience) == 36 and audience.count("-") == 4 else f"servicePrincipalNames/any(x:x eq '{audience}')"
+    r = requests.get(f"{g}/servicePrincipals", headers=h, params={"$filter": flt, "$select": "id,appRoles,displayName"}, timeout=30)
     r.raise_for_status()
     sps = r.json().get("value", [])
     if not sps:

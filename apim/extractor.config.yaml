@@ -10,6 +10,7 @@ namedValues:
   - tenant-id
   - environment
   - api-audience
+  - api-client-id
   - model-deployment
   - appinsights-connection-string
 loggers:

@@ -6,7 +6,7 @@ spec: apim/artifacts/apis/skills-api-v1/specification.yaml
 gatewayPath: skills/v1
 auth:
   type: managed_identity
-  audience: "{#API_AUDIENCE#}"
+  audience: "{#API_RESOURCE_APP_CLIENT_ID#}"   # client-id form: a token-cache key distinct from the URI form (see docs/identity.md)
 allowedOperations:
   - getHealth
   - listSkills

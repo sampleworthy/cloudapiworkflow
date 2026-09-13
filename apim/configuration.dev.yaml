@@ -20,6 +20,10 @@ namedValues:
     properties:
       displayName: api-audience
       value: "{#API_AUDIENCE#}"
+  - name: api-client-id
+    properties:
+      displayName: api-client-id
+      value: "{#API_RESOURCE_APP_CLIENT_ID#}"
   - name: model-deployment
     properties:
       displayName: model-deployment

@@ -36,16 +36,16 @@ def test_filtered_spec_is_read_only_and_gateway_bound():
 
 
 def test_tokens_render_from_environment(monkeypatch):
-    monkeypatch.setenv("API_AUDIENCE_DEV", "api://t/cloudapiworkflow-dev")
+    monkeypatch.setenv("API_RESOURCE_APP_CLIENT_ID_DEV", "11111111-2222-3333-4444-555555555555")
     monkeypatch.setenv("FOUNDRY_MODEL_DEPLOYMENT_DEV", "gpt-4.1-mini")
     d = common.load_agent(AGENT, "DEV")
     assert d["model"]["deployment"] == "gpt-4.1-mini"
-    assert d["_tools"][0]["auth"]["audience"] == "api://t/cloudapiworkflow-dev"
+    assert d["_tools"][0]["auth"]["audience"] == "11111111-2222-3333-4444-555555555555"
 
 
 def test_missing_token_fails_loudly(monkeypatch):
     for k in list(os.environ):
-        if k.startswith(("API_AUDIENCE", "FOUNDRY_MODEL_DEPLOYMENT")):
+        if k.startswith(("API_RESOURCE_APP_CLIENT_ID", "FOUNDRY_MODEL_DEPLOYMENT")):
             monkeypatch.delenv(k)
     with pytest.raises(SystemExit):
         common.load_agent(AGENT, "DEV")
