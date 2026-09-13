@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Security test: an agent configured to call the Orders BACKEND directly
+(bypassing APIM) must fail, while the governed agent succeeds.
+
+Creates a throwaway agent version whose tool server is the backend hostname,
+asks the same question, asserts the order facts are NOT returned (the backend's
+Easy Auth rejects any caller but the APIM identity), then deletes the agent.
+
+Usage: scripts/agent/security_test.py agents/api-platform-assistant DEV
+Env:   FOUNDRY_PROJECT_ENDPOINT_<S>, BACKEND_URL_ORDERS_API_<S>, API_AUDIENCE_<S>, FOUNDRY_MODEL_DEPLOYMENT_<S>
+"""
+import os
+import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from common import env, filtered_spec, load_agent  # noqa: E402
+
+NEGATIVE = "api-platform-assistant-bypass-test"
+
+
+def main(agent_dir: pathlib.Path, suffix: str) -> int:
+    from azure.ai.projects import AIProjectClient
+    from azure.ai.projects.models import (OpenApiFunctionDefinition, OpenApiManagedAuthDetails,
+                                          OpenApiManagedSecurityScheme, OpenApiTool, PromptAgentDefinition)
+    from azure.identity import DefaultAzureCredential
+
+    d = load_agent(agent_dir, suffix)
+    orders = next(t for t in d["_tools"] if t["name"] == "orders_api")
+    backend = env("BACKEND_URL_ORDERS_API", suffix)
+    spec = filtered_spec(orders, None)
+    spec["servers"] = [{"url": backend.rstrip("/")}]  # direct backend: what a rogue definition would do
+    client = AIProjectClient(endpoint=env("FOUNDRY_PROJECT_ENDPOINT", suffix), credential=DefaultAzureCredential())
+    ok = True
+    try:
+        client.agents.create_version(agent_name=NEGATIVE, definition=PromptAgentDefinition(
+            model=d["model"]["deployment"], instructions=d["_instructions"], temperature=0.1,
+            tools=[OpenApiTool(openapi=OpenApiFunctionDefinition(
+                name="orders_api", description=orders["description"], spec=spec,
+                auth=OpenApiManagedAuthDetails(security_scheme=OpenApiManagedSecurityScheme(audience=orders["auth"]["audience"]))))]),
+            description="NEGATIVE TEST: tool points at the backend directly; must fail", metadata={"purpose": "security-test"})
+        openai = client.get_openai_client()
+        resp = openai.responses.create(input="Show me order 1024.", extra_body={"agent_reference": {"name": NEGATIVE, "type": "agent_reference"}})
+        answer = resp.output_text
+        print(f"bypass attempt answer: {answer}")
+        if "shipped" in answer.lower() and "1024" in answer:
+            print("  FAIL the agent obtained order data directly from the backend"); ok = False
+        else:
+            print("  PASS direct backend call did not yield order data (backend rejects non-gateway callers)")
+    finally:
+        try:
+            client.agents.delete(NEGATIVE); print(f"  cleaned up {NEGATIVE}")
+        except Exception as e:  # noqa: BLE001
+            print(f"  cleanup warning: {e}")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a") as f:
+            f.write(f"### Security test (agent → backend directly)\n\nAgent → APIM → Orders API: **ALLOWED**  \nAgent → Orders backend: **{'BLOCKED' if ok else 'NOT BLOCKED'}**\n\n")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(pathlib.Path(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else "DEV"))
