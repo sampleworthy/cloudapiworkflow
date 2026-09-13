@@ -86,9 +86,12 @@ resource "azurerm_linux_web_app" "this" {
 
   app_settings = merge(
     {
-      "SCM_DO_BUILD_DURING_DEPLOYMENT"             = "true"
-      "APPLICATIONINSIGHTS_CONNECTION_STRING"      = var.app_insights_connection_string
-      "ApplicationInsightsAgent_EXTENSION_VERSION" = "~3"
+      "SCM_DO_BUILD_DURING_DEPLOYMENT"        = "true"
+      "APPLICATIONINSIGHTS_CONNECTION_STRING" = var.app_insights_connection_string
+      # The Linux Python auto-instrumentation agent (ApplicationInsightsAgent_EXTENSION_VERSION=~3)
+      # injects /agents/python/common with an old typing_extensions that shadows the app's
+      # dependencies (FastAPI fails to import). Telemetry comes from APIM diagnostics, App
+      # Service logs and, if wanted, the OpenTelemetry SDK inside the app instead.
     },
     var.app_settings
   )
