@@ -5,7 +5,7 @@ with telemetry proving the request travelled through APIM.
   1. "Show me order 1024." to the deployed agent (Responses API, agent_reference)
   2. assert the answer carries the order facts (ord-1024, shipped) and that a tool call happened
   3. query Log Analytics: AppRequests for orders-api-v1 in the test window whose
-     Response-X-Caller-Id equals the agent identity's client id, status 200
+     Response-X-Caller-Id equals the agent's own Entra identity (client id), status 200
      (App Insights ingestion lags, so this polls for up to ~6 minutes)
 
 Usage: scripts/agent/run_agent_test.py agents/api-platform-assistant DEV
@@ -68,7 +68,8 @@ def main(agent_dir: pathlib.Path, suffix: str) -> int:
     else:
         print("  PASS a tool call was made")
 
-    workspace, caller = env("LOG_ANALYTICS_WORKSPACE_ID", suffix), env("AGENT_IDENTITY_CLIENT_ID", suffix)
+    workspace = env("LOG_ANALYTICS_WORKSPACE_ID", suffix)
+    caller = os.environ.get(f"AGENT_INSTANCE_CLIENT_ID_{suffix}") or env("AGENT_IDENTITY_CLIENT_ID", suffix)
     row = None
     for attempt in range(24):
         row = telemetry(workspace, caller, since)

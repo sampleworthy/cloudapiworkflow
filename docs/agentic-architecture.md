@@ -52,8 +52,8 @@ commit). Rollback is redeploying the previous commit.
 ```text
 User: "Show me order 1024."
   1. agent decides orders_api.getOrder(orderId="ord-1024")
-  2. Foundry acquires a token for api://<tenant>/cloudapiworkflow-<env> as the project identity
-     (roles: Orders.Read, Skills.Read - granted by Terraform)
+  2. Foundry acquires a token for api://<tenant>/cloudapiworkflow-<env> as the agent's own
+     Entra identity (roles: Orders.Read, Skills.Read - declared in agent.yaml, granted by agent-deploy)
   3. APIM: validate-jwt → roles → rate limit → X-Correlation-Id, X-Caller-Id=<agent client id>
   4. APIM → Orders backend with APIM's managed identity (Easy Auth allows only APIM)
   5. answer: "Order ord-1024 for cust-7 is shipped, total 499.00 USD."
@@ -63,7 +63,7 @@ User: "Show me order 1024."
 
 1. Tool definitions reference published contracts (`apim/artifacts/apis/<api>/specification.yaml`) by path, never by URL; the server URL is the gateway, injected at deploy time.
 2. `agent-ci` rejects hosts, URLs, `azurewebsites.net`, IP addresses and credential-looking strings anywhere in the definition.
-3. The agent identity holds only read roles; a write operation in a tool needs an explicit `allowWrites: true` and review.
+3. The agent identity holds only the roles its definition declares, and `governance/agent-roles.yaml` (platform-owned) bounds what can be declared; a write operation in a tool needs an explicit `allowWrites: true` and review.
 4. Even a rogue definition that names the backend directly fails: the backend accepts tokens only from APIM's identity. `agent-deploy` proves this every run with the security test (a throwaway agent pointed at the backend gets no data, then is deleted).
 5. The agent has no APIM subscription key and no model key; there is nothing to leak.
 
