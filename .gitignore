@@ -35,3 +35,6 @@ node_modules/
 
 # APIOps extractor scratch output
 apim/extracted/
+
+# prebuilt dependency trees produced by application-deploy
+.python_packages/

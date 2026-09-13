@@ -22,7 +22,7 @@ variable "python_version" {
 
 variable "startup_command" {
   type    = string
-  default = "gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8000"
+  default = "python -m gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8000"
 }
 
 variable "health_check_path" {
