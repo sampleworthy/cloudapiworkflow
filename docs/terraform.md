@@ -34,9 +34,13 @@ tfvars carry the values.
 | Entra resource app + app roles (`api_app_roles`) | the token audience every API policy validates |
 | demo clients `agent`, `unprivileged` | federated for CI, secret in Key Vault for local use; roles from `demo_clients` |
 
-Outputs include everything APIOps and the workflows need; `github_variables`
-is written to repository variables by `terraform-deploy` so nothing else reads
-state.
+Outputs include everything APIOps and the workflows need. `terraform-deploy`
+uploads them as the `outputs-<environment>` artifact (90 days) and every
+consumer workflow reads that artifact through `.github/actions/platform-context`,
+so nothing else touches Terraform state and no token beyond the job's own is
+needed. Repository variables `<KEY>_<ENV>` are a fallback an operator can
+refresh with `terraform output -json github_variables` (the default job token
+cannot write variables).
 
 ## Remote state
 
