@@ -1,0 +1,23 @@
+# Tool: Orders API, reached only through the APIM gateway.
+name: orders_api
+description: Look up customer orders (list orders, get one order by id such as ord-1024) through the enterprise API gateway.
+type: openapi
+
+# The governed contract: the exact file APIOps publishes to the gateway.
+spec: apim/artifacts/apis/orders-api-v1/specification.yaml
+
+# Gateway route for this API version; the server URL becomes
+# <gateway url>/orders/v1 at deploy time. No host is written here.
+gatewayPath: orders/v1
+
+# The Foundry project's managed identity requests a token for this audience;
+# APIM validates it and checks the Orders.Read role. No key, no secret.
+auth:
+  type: managed_identity
+  audience: "{#API_AUDIENCE#}"
+
+# Read-only subset of the contract exposed to the model.
+allowedOperations:
+  - getHealth
+  - listOrders
+  - getOrder

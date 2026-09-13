@@ -1,0 +1,13 @@
+# Tool: Skills API, reached only through the APIM gateway.
+name: skills_api
+description: Look up the engineering skills catalogue (list skills, filter by category, get a skill by id) through the enterprise API gateway.
+type: openapi
+spec: apim/artifacts/apis/skills-api-v1/specification.yaml
+gatewayPath: skills/v1
+auth:
+  type: managed_identity
+  audience: "{#API_AUDIENCE#}"
+allowedOperations:
+  - getHealth
+  - listSkills
+  - getSkill

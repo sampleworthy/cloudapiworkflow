@@ -1,0 +1,32 @@
+# Agent CI: validates agent definitions on pull requests (Foundry CI/CD).
+#   * agent.yaml / instructions / tool definitions (schema, hygiene)
+#   * tools reference contracts APIOps publishes and the gateway path only
+#   * no hosts, no direct backend URLs, no secrets
+#   * unit tests for tool construction
+name: agent-ci
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["agents/**", "scripts/agent/**", ".github/workflows/agent-ci.yml"]
+
+concurrency: { group: "agent-ci-${{ github.event.pull_request.number }}", cancel-in-progress: true }
+permissions: { contents: read }
+
+jobs:
+  validate:
+    name: agent definitions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install --quiet -r scripts/agent/requirements.txt pytest
+      - name: validate every agent (definition, instructions, tools, allowed endpoints)
+        run: for d in agents/*/; do scripts/agent/validate_agent.py "$d"; done
+      - name: gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: "${{ github.token }}" }
+      - name: unit tests
+        run: pytest -q agents
