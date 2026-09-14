@@ -52,13 +52,24 @@ def main(agent_dir: pathlib.Path, suffix: str) -> int:
                 except (Exception, SystemExit) as e:  # noqa: BLE001  (the helper exits on Graph errors)
                     print(f"  role grant to the throwaway identity not possible yet ({e}); retry {attempt + 1}/3"); time.sleep(10)
         openai = client.get_openai_client()
-        resp = openai.responses.create(input="Show me order 1024.", extra_body={"agent_reference": {"name": NEGATIVE, "type": "agent_reference"}})
-        answer = resp.output_text
-        print(f"bypass attempt answer: {answer}")
-        if "shipped" in answer.lower() and "1024" in answer:
-            print("  FAIL the agent obtained order data directly from the backend"); ok = False
-        else:
-            print("  PASS direct backend call did not yield order data (backend rejects non-gateway callers)")
+        try:
+            resp = openai.responses.create(input="Show me order 1024.", extra_body={"agent_reference": {"name": NEGATIVE, "type": "agent_reference"}})
+            answer = resp.output_text
+            print(f"bypass attempt answer: {answer}")
+            if "shipped" in answer.lower() and "1024" in answer:
+                print("  FAIL the agent obtained order data directly from the backend"); ok = False
+            else:
+                print("  PASS direct backend call did not yield order data (backend rejects non-gateway callers)")
+        except Exception as e:  # noqa: BLE001
+            # Foundry surfaces a failed tool call as a request error carrying the HTTP status the backend returned.
+            msg = str(e)
+            host = backend.split("//", 1)[-1].split("/")[0]
+            if host in msg and ("HTTP error 401" in msg or "HTTP error 403" in msg):
+                status = "403" if "HTTP error 403" in msg else "401"
+                print(f"bypass attempt: the tool call to {host} was rejected with HTTP {status} (backend built-in auth: only the gateway identity is allowed)")
+                print("  PASS direct backend call blocked")
+            else:
+                print(f"  FAIL unexpected error from the bypass attempt: {msg[:300]}"); ok = False
     finally:
         try:
             client.agents.delete(NEGATIVE); print(f"  cleaned up {NEGATIVE}")
