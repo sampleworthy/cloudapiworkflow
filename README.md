@@ -173,27 +173,68 @@ Walkthrough with every file: [docs/api-onboarding.md](docs/api-onboarding.md).
 ## Demonstration: Orders API added to the existing instance
 
 <!-- evidence:start -->
-Before the Orders API pull request:
+Captured from the live dev environment on 2026-09-13 (subscription `APIM-sub`,
+`rg-cloudapiworkflow`, East US 2). The APIM resource id never changed:
+`/subscriptions/…/resourceGroups/rg-cloudapiworkflow/providers/Microsoft.ApiManagement/service/apim-cloudapiworkflow-k7la`,
+created 2026-09-12 22:56 UTC by `terraform-deploy`.
+
+Before the Orders API pull request (#2):
 
 ```text
-$ az apim api list -g rg-cloudapiworkflow -n apim-cloudapiworkflow-<suffix> -o table
-Name           Path     ApiVersion  ApiRevision
--------------  -------  ----------  -----------
-skills-api-v1  skills   v1          1
+$ az apim api list -g rg-cloudapiworkflow --service-name apim-cloudapiworkflow-k7la -o table
+Name               Path    ApiVersion    ApiRevision
+-----------------  ------  ------------  -------------
+foundry-models-v1  models  v1            1
+skills-api-v1      skills  v1            1
 ```
 
-After the PR merged (`apiops-publisher` run, same APIM resource id):
+After PR #2 merged, `apiops-publisher` run 34754845578 (delta publish of the
+merge commit: only `apis/orders-api-v1`, its policy and diagnostic were put):
 
 ```text
-Name           Path     ApiVersion  ApiRevision
--------------  -------  ----------  -----------
-skills-api-v1  skills   v1          1
-orders-api-v1  orders   v1          1
+Name               Path    ApiVersion    ApiRevision
+-----------------  ------  ------------  -------------
+foundry-models-v1  models  v1            1
+orders-api-v1      orders  v1            1
+skills-api-v1      skills  v1            1
 ```
 
-Post-deployment tests for `orders-api-v1`: health 200, no token 401, invalid
-token 401, unprivileged client 403, agent client 200, 70 calls against a
-60/min limit produced 429 with `Retry-After`, direct backend call 401.
+Post-deployment tests from that run (dev, Consumption tier):
+
+```text
+== orders-api-v1  (https://apim-cloudapiworkflow-k7la.azure-api.net/orders/v1)  operation: GET /orders
+  PASS health via gateway -> 200
+  PASS no token -> 401
+  PASS invalid token -> 401
+  PASS valid token, no permission -> 403
+  PASS authorized -> 200
+  PASS direct backend bypass (no APIM) -> 401
+== skills-api-v1 … ALL PASS      == foundry-models-v1 (POST chat/completions) … ALL PASS
+Rate limit: not applicable on Consumption (no throttling policies on this tier)
+```
+
+The extractor was run against the instance afterwards (run 34756387260); its
+pull request (#19) contained only APIM's own normalisation of the published
+artifacts (description/contact/tags copied from the OpenAPI documents) and was
+merged, so drift detection now compares against a faithful baseline.
+
+Agent (Phase 3), `agent-deploy` run 34794751135:
+
+```text
+prompt: Show me order 1024.
+answer: Order 1024 is shipped and has a total of 499.0 USD for one unit of SKU-APIM-PRO.
+output items: ['openapi_call', 'openapi_call_output', 'message']
+  PASS answer carries the order facts
+  PASS a tool call was made
+  PASS APIM telemetry: orders-api-v1 GET /orders/v1/orders/ord-1024 -> 200 in 4041 ms,
+       caller f51858b6-… (Foundry managed identity), correlation 4ac00c14-70fb-40b4-b0a0-c620219b302e
+```
+
+Agent → APIM → Orders API: **allowed**. Agent → Orders backend directly: **blocked**.
+The security test deploys a throwaway agent whose tool points at
+`app-orders-api-…azurewebsites.net`; the backend's built-in authentication
+rejected the call with HTTP 403 (only the gateway's identity is an allowed
+client), the agent returned no order data, and the throwaway agent was deleted.
 <!-- evidence:end -->
 
 ## Getting started (platform administrator)
