@@ -68,3 +68,15 @@ jobs:
           url="${{ vars.APIM_GATEWAY_URL_DEV }}/${path%/}/health"
           for i in $(seq 1 30); do code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$url"); echo "$url -> $code"; [ "$code" = "200" ] && exit 0; sleep 10; done
           echo "::error::${{ matrix.app }} did not become healthy through the gateway"; exit 1
+
+      - name: backend connectivity validation for ${{ matrix.app }} (APIM -> backend path, classified)
+        if: steps.target.outputs.name != ''
+        run: |
+          d=$(ls -d apim/artifacts/apis/${{ matrix.app }}-v*/ 2>/dev/null | head -1); [ -z "$d" ] && exit 0
+          cat > "$RUNNER_TEMP/vars.json" <<'JSON'
+          ${{ toJSON(vars) }}
+          JSON
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/vars.json" >> "$GITHUB_ENV"
+          pip install --quiet requests pyyaml
+          set -a; . <(jq -r 'to_entries[] | "\(.key)=\"\(.value)\""' "$RUNNER_TEMP/vars.json"); set +a
+          scripts/backend_path_check.py DEV "$(basename "$d")"

@@ -135,6 +135,8 @@ output "github_variables" {
       APIM_RESOURCE_GROUP                = azurerm_resource_group.main.name
       API_AUDIENCE                       = module.api_resource_app.identifier_uri
       API_RESOURCE_APP_CLIENT_ID         = module.api_resource_app.client_id
+      APIM_IDENTITY_CLIENT_ID            = data.azuread_service_principal.apim_identity.client_id
+      PRIVATE_ENDPOINTS_ENABLED          = tostring(var.enable_private_endpoints)
       AGENT_CLIENT_ID                    = azuread_application.demo_client["agent"].client_id
       UNPRIVILEGED_CLIENT_ID             = azuread_application.demo_client["unprivileged"].client_id
       APPINSIGHTS_ID                     = module.monitoring.app_insights_id

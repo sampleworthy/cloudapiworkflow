@@ -71,7 +71,7 @@ jobs:
           { echo '### Publish verification (dev)'; echo '```'; cat verify.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
   test-dev:
-    name: dev / post-deployment tests
+    name: dev / backend path + post-deployment tests
     needs: publish-dev
     runs-on: ubuntu-latest
     environment: development
@@ -81,6 +81,17 @@ jobs:
       - uses: ./.github/actions/platform-context
         with: { environment: development, repository_variables: "${{ toJSON(vars) }}" }
       - run: pip install --quiet pyyaml
+
+      # Prove the APIM -> backend runtime path for every API before anything else:
+      # configuration, DNS, network, TLS, private networking, workload auth, backend
+      # authorization, backend /health, gateway /health - with the failure classified.
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_APIOPS_PUBLISHER_CLIENT_ID_DEV }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+      - name: backend connectivity validation (APIM -> backend path, classified)
+        run: pip install --quiet requests && scripts/backend_path_check.py DEV
 
       # Tokens for the two demo clients via workload identity federation (the
       # job's OIDC token is trusted by both client apps for this environment).
