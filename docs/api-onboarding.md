@@ -64,7 +64,21 @@ CODEOWNERS requests the owning API team and the API platform team.
 3. render `configuration.dev.yaml` from repository variables
 4. publisher with `COMMIT_ID=<merge sha>`: creates the version set, backend, API, policy, diagnostic and product link in the **existing** instance
 5. `scripts/verify-publish.sh`: `az apim api show` confirms path `orders`, version `v1`, revision `1`
-6. post-deployment tests as the two demo clients (tokens via federated credentials, no secrets):
+6. `scripts/backend_path_check.py`: the APIM → backend runtime path, stage by stage, before any functional test. A publish that APIM accepted is **not** a working API until this passes:
+
+| stage | proves | failure is classified as |
+|---|---|---|
+| APIM configuration | API published, policy routes to a backend entity whose URL equals the environment's override | APIM policy/route, **incorrect backend URL** |
+| DNS resolution | the backend host resolves (private-link answers recognised) | DNS |
+| Network reachability | TCP 443 from the runner; closed is expected for private backends | routing / NSG / firewall |
+| TLS | chain and hostname valid (APIM validates both) | TLS |
+| Private networking | public access, VNet integration, private endpoint approval, private DNS record consistent with the environment | private endpoint, private DNS |
+| Workload authentication | APIM has a managed identity and the policy uses it for this backend | authentication (APIM side) |
+| Backend authorization | the backend's built-in auth allows APIM's identity and the requested audience | authorization |
+| Backend /health | direct call answers 401/403 (identity-locked, up) rather than 5xx or nothing | backend availability |
+| APIM gateway /health | `GET <gateway>/orders/v1/health` → 200 through APIM; a non-200 is explained from APIM's backend telemetry | DNS / TLS / routing / backend / authentication / authorization / APIM policy as seen by APIM |
+
+7. post-deployment tests as the two demo clients (tokens via federated credentials, no secrets):
 
 | test | expected |
 |---|---|
@@ -76,7 +90,7 @@ CODEOWNERS requests the owning API team and the API platform team.
 | 70 requests inside the 60/min limit (classic/v2 tiers only; not applicable on Consumption) | at least one 429 with `Retry-After` |
 | `GET https://app-orders-api-<suffix>.azurewebsites.net/health` (no APIM) | 401 |
 
-7. job summary lists the APIs in the instance and links the App Insights query.
+8. job summary lists the APIs in the instance and links the App Insights query.
 
 Backend code ships independently through `application-deploy` when
 `applications/orders-api/**` changes; the web app itself already exists.

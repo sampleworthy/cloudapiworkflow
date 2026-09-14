@@ -62,6 +62,19 @@ Direct backend bypass attempts:
 AppServiceAuthenticationLogs | where TimeGenerated > ago(24h) and StatusCode == 401 | summarize attempts = count() by _ResourceId, bin(TimeGenerated, 1h)
 ```
 
+## Backend connectivity validation
+
+`scripts/backend_path_check.py` runs after every publish (and after every
+application deployment) and refuses to call a deployment successful until an
+end-to-end request through APIM reached the backend. Its job-summary table
+names the failing stage and the cause: DNS, TLS, routing/NSG/firewall,
+private endpoint, private DNS, backend availability, authentication,
+authorization, APIM policy, or an incorrect backend URL. For gateway failures
+it reads APIM's own backend telemetry (`AppDependencies` / `AppExceptions`
+for the request's correlation id) so the classification reflects what APIM
+saw, not what the runner could reach. Run it by hand with the platform
+variables exported: `scripts/backend_path_check.py DEV orders-api-v1`.
+
 ## Troubleshooting by status
 
 | status | most likely cause | check |
