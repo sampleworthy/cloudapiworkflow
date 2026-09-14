@@ -116,6 +116,15 @@ one container per layer with RBAC. State is never in Git.
 **Protected retirement.** Deleting an API is a labelled, reviewed PR after a
 deprecation period; the publisher refuses unlabelled deletions.
 
+**Backend path validation.** APIOps accepting the artifacts is not proof
+of a working API. After every publish a validator walks APIM configuration →
+DNS → network → TLS → private networking → workload authentication → backend
+authorization → backend health → gateway health, classifies any break (DNS,
+TLS, routing/NSG, private endpoint, backend availability, authentication,
+authorization, APIM policy, incorrect backend URL) from runner probes and
+APIM's own backend telemetry, and marks the deployment verified only when a
+request through the gateway reached the backend.
+
 **Post-deployment tests.** A green publish proves nothing; the tests prove the
 API answers, authentication and authorization behave (401/401/403/200), rate
 limiting works (429, on classic/v2 tiers; Consumption has no throttling
